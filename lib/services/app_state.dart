@@ -1,18 +1,37 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import '../models/daily_state.dart';
+import 'daily_service.dart';
 
 class AppState extends ChangeNotifier {
   static const String favoritesKey = 'favorites';
   static const String xpKey = 'xp';
   static const String rewardedKey = 'rewarded';
 
+  static const String dailyDateKey = 'daily_date';
+  static const String dailyBeliefCompletedKey = 'daily_belief_completed';
+  static const String dailySayingCompletedKey = 'daily_saying_completed';
+  static const String lastActiveDateKey = 'last_active_date';
+  static const String currentStreakKey = 'current_streak';
+
   final Set<String> _favoriteBeliefIds = {};
   final Set<String> _rewardedBeliefIds = {};
   int _xp = 0;
 
+  late DailyState _dailyState;
+
+  AppState() {
+    _dailyState = DailyState.initial(DailyService.todayKey());
+  }
+
   Set<String> get favoriteBeliefIds => _favoriteBeliefIds;
   Set<String> get rewardedBeliefIds => _rewardedBeliefIds;
   int get xp => _xp;
+
+  DailyState get dailyState => _dailyState;
+  bool get dailyBeliefCompleted => _dailyState.dailyBeliefCompleted;
+  bool get dailySayingCompleted => _dailyState.dailySayingCompleted;
+  int get currentStreak => _dailyState.currentStreak;
 
   bool isFavorite(String beliefId) {
     return _favoriteBeliefIds.contains(beliefId);
@@ -74,6 +93,7 @@ class AppState extends ChangeNotifier {
 
   Future<void> loadData() async {
     final prefs = await SharedPreferences.getInstance();
+
     final savedFavorites = prefs.getStringList(favoritesKey) ?? [];
     final savedXp = prefs.getInt(xpKey) ?? 0;
     final savedRewarded = prefs.getStringList(rewardedKey) ?? [];
@@ -87,6 +107,21 @@ class AppState extends ChangeNotifier {
       ..addAll(savedRewarded);
 
     _xp = savedXp;
+
+    _dailyState = DailyState(
+      dateKey:
+          prefs.getString(dailyDateKey) ?? DailyService.todayKey(),
+      dailyBeliefCompleted:
+          prefs.getBool(dailyBeliefCompletedKey) ?? false,
+      dailySayingCompleted:
+          prefs.getBool(dailySayingCompletedKey) ?? false,
+      lastActiveDateKey: prefs.getString(lastActiveDateKey),
+      currentStreak: prefs.getInt(currentStreakKey) ?? 0,
+    );
+
+    _dailyState = DailyService.syncState(_dailyState);
+    await _saveDailyState();
+
     notifyListeners();
   }
 
@@ -103,6 +138,30 @@ class AppState extends ChangeNotifier {
   Future<void> _saveRewarded() async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setStringList(rewardedKey, _rewardedBeliefIds.toList());
+  }
+
+  Future<void> _saveDailyState() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(dailyDateKey, _dailyState.dateKey);
+    await prefs.setBool(
+      dailyBeliefCompletedKey,
+      _dailyState.dailyBeliefCompleted,
+    );
+    await prefs.setBool(
+      dailySayingCompletedKey,
+      _dailyState.dailySayingCompleted,
+    );
+
+    if (_dailyState.lastActiveDateKey != null) {
+      await prefs.setString(
+        lastActiveDateKey,
+        _dailyState.lastActiveDateKey!,
+      );
+    } else {
+      await prefs.remove(lastActiveDateKey);
+    }
+
+    await prefs.setInt(currentStreakKey, _dailyState.currentStreak);
   }
 
   Future<void> toggleFavorite(String beliefId) async {
@@ -133,6 +192,48 @@ class AppState extends ChangeNotifier {
     _xp += xpAmount;
     await _saveXp();
 
+    notifyListeners();
+    return true;
+  }
+
+  Future<bool> completeDailyBelief() async {
+    _dailyState = DailyService.syncState(_dailyState);
+
+    if (_dailyState.dailyBeliefCompleted) {
+      await _saveDailyState();
+      notifyListeners();
+      return false;
+    }
+
+    _dailyState = DailyService.completeDailyItem(
+      _dailyState,
+      itemType: 'belief',
+    );
+    _xp += 25;
+
+    await _saveDailyState();
+    await _saveXp();
+    notifyListeners();
+    return true;
+  }
+
+  Future<bool> completeDailySaying() async {
+    _dailyState = DailyService.syncState(_dailyState);
+
+    if (_dailyState.dailySayingCompleted) {
+      await _saveDailyState();
+      notifyListeners();
+      return false;
+    }
+
+    _dailyState = DailyService.completeDailyItem(
+      _dailyState,
+      itemType: 'saying',
+    );
+    _xp += 25;
+
+    await _saveDailyState();
+    await _saveXp();
     notifyListeners();
     return true;
   }
