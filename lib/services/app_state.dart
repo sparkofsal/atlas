@@ -1,6 +1,10 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import '../models/belief.dart';
 import '../models/daily_state.dart';
+import '../models/item_interaction.dart';
 import 'daily_service.dart';
 
 class AppState extends ChangeNotifier {
@@ -14,10 +18,13 @@ class AppState extends ChangeNotifier {
   static const String lastActiveDateKey = 'last_active_date';
   static const String currentStreakKey = 'current_streak';
 
+  static const String interactionsKey = 'item_interactions';
+
   final Set<String> _favoriteBeliefIds = {};
   final Set<String> _rewardedBeliefIds = {};
-  int _xp = 0;
+  final Map<String, ItemInteraction> _interactions = {};
 
+  int _xp = 0;
   late DailyState _dailyState;
 
   AppState() {
@@ -35,6 +42,10 @@ class AppState extends ChangeNotifier {
 
   bool isFavorite(String beliefId) {
     return _favoriteBeliefIds.contains(beliefId);
+  }
+
+  ItemInteraction getInteraction(String itemId) {
+    return _interactions[itemId] ?? const ItemInteraction();
   }
 
   int get level {
@@ -109,15 +120,22 @@ class AppState extends ChangeNotifier {
     _xp = savedXp;
 
     _dailyState = DailyState(
-      dateKey:
-          prefs.getString(dailyDateKey) ?? DailyService.todayKey(),
-      dailyBeliefCompleted:
-          prefs.getBool(dailyBeliefCompletedKey) ?? false,
-      dailySayingCompleted:
-          prefs.getBool(dailySayingCompletedKey) ?? false,
+      dateKey: prefs.getString(dailyDateKey) ?? DailyService.todayKey(),
+      dailyBeliefCompleted: prefs.getBool(dailyBeliefCompletedKey) ?? false,
+      dailySayingCompleted: prefs.getBool(dailySayingCompletedKey) ?? false,
       lastActiveDateKey: prefs.getString(lastActiveDateKey),
       currentStreak: prefs.getInt(currentStreakKey) ?? 0,
     );
+
+    final savedInteractionsRaw = prefs.getString(interactionsKey);
+    _interactions.clear();
+    if (savedInteractionsRaw != null && savedInteractionsRaw.isNotEmpty) {
+      final decoded = jsonDecode(savedInteractionsRaw) as Map<String, dynamic>;
+      decoded.forEach((key, value) {
+        _interactions[key] =
+            ItemInteraction.fromJson(Map<String, dynamic>.from(value));
+      });
+    }
 
     _dailyState = DailyService.syncState(_dailyState);
     await _saveDailyState();
@@ -164,6 +182,14 @@ class AppState extends ChangeNotifier {
     await prefs.setInt(currentStreakKey, _dailyState.currentStreak);
   }
 
+  Future<void> _saveInteractions() async {
+    final prefs = await SharedPreferences.getInstance();
+    final encoded = jsonEncode(
+      _interactions.map((key, value) => MapEntry(key, value.toJson())),
+    );
+    await prefs.setString(interactionsKey, encoded);
+  }
+
   Future<void> toggleFavorite(String beliefId) async {
     if (_favoriteBeliefIds.contains(beliefId)) {
       _favoriteBeliefIds.remove(beliefId);
@@ -194,6 +220,65 @@ class AppState extends ChangeNotifier {
 
     notifyListeners();
     return true;
+  }
+
+  Future<int> submitGuess(Belief belief, String selectedAnswer) async {
+    final current = getInteraction(belief.id);
+
+    if (current.hasGuessed) {
+      return 0;
+    }
+
+    final isCorrect = selectedAnswer == belief.countryName;
+    int xpAwarded = isCorrect ? 10 : 3;
+
+    bool discoveryAwarded = false;
+    if (!_rewardedBeliefIds.contains(belief.id)) {
+      _rewardedBeliefIds.add(belief.id);
+      await _saveRewarded();
+      xpAwarded += belief.xpReward;
+      discoveryAwarded = true;
+    }
+
+    final updated = current.copyWith(
+      hasGuessed: true,
+      selectedAnswer: selectedAnswer,
+      isCorrect: isCorrect,
+      guessRewarded: true,
+      discoveryRewarded: discoveryAwarded || current.discoveryRewarded,
+    );
+
+    _interactions[belief.id] = updated;
+    _xp += xpAwarded;
+
+    await _saveInteractions();
+    await _saveXp();
+    notifyListeners();
+
+    return xpAwarded;
+  }
+
+  Future<int> submitReaction(String itemId, String reactionType) async {
+    final current = getInteraction(itemId);
+
+    if (current.hasReacted) {
+      return 0;
+    }
+
+    final updated = current.copyWith(
+      hasReacted: true,
+      reactionType: reactionType,
+      reactionRewarded: true,
+    );
+
+    _interactions[itemId] = updated;
+    _xp += 2;
+
+    await _saveInteractions();
+    await _saveXp();
+    notifyListeners();
+
+    return 2;
   }
 
   Future<bool> completeDailyBelief() async {
