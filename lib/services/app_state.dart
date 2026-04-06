@@ -2,9 +2,12 @@ import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import '../data/mock_countries.dart';
 import '../models/belief.dart';
+import '../models/country_collection.dart';
 import '../models/daily_state.dart';
 import '../models/item_interaction.dart';
+import 'collection_service.dart';
 import 'daily_service.dart';
 
 class AppState extends ChangeNotifier {
@@ -19,10 +22,12 @@ class AppState extends ChangeNotifier {
   static const String currentStreakKey = 'current_streak';
 
   static const String interactionsKey = 'item_interactions';
+  static const String countryCollectionsKey = 'country_collections';
 
   final Set<String> _favoriteBeliefIds = {};
   final Set<String> _rewardedBeliefIds = {};
   final Map<String, ItemInteraction> _interactions = {};
+  final Map<String, CountryCollection> _countryCollections = {};
 
   int _xp = 0;
   late DailyState _dailyState;
@@ -46,6 +51,18 @@ class AppState extends ChangeNotifier {
 
   ItemInteraction getInteraction(String itemId) {
     return _interactions[itemId] ?? const ItemInteraction();
+  }
+
+  CountryCollection getCountryCollection(String countryCode) {
+    return _countryCollections[countryCode] ??
+        CountryCollection.initial(countryCode);
+  }
+
+  List<CountryCollectionProgress> getCountryProgressList() {
+    return mockCountries.map((country) {
+      final collection = getCountryCollection(country.code);
+      return CollectionService.buildProgress(collection);
+    }).toList();
   }
 
   int get level {
@@ -137,6 +154,16 @@ class AppState extends ChangeNotifier {
       });
     }
 
+    final savedCollectionsRaw = prefs.getString(countryCollectionsKey);
+    _countryCollections.clear();
+    if (savedCollectionsRaw != null && savedCollectionsRaw.isNotEmpty) {
+      final decoded = jsonDecode(savedCollectionsRaw) as Map<String, dynamic>;
+      decoded.forEach((key, value) {
+        _countryCollections[key] =
+            CountryCollection.fromJson(Map<String, dynamic>.from(value));
+      });
+    }
+
     _dailyState = DailyService.syncState(_dailyState);
     await _saveDailyState();
 
@@ -190,6 +217,14 @@ class AppState extends ChangeNotifier {
     await prefs.setString(interactionsKey, encoded);
   }
 
+  Future<void> _saveCountryCollections() async {
+    final prefs = await SharedPreferences.getInstance();
+    final encoded = jsonEncode(
+      _countryCollections.map((key, value) => MapEntry(key, value.toJson())),
+    );
+    await prefs.setString(countryCollectionsKey, encoded);
+  }
+
   Future<void> toggleFavorite(String beliefId) async {
     if (_favoriteBeliefIds.contains(beliefId)) {
       _favoriteBeliefIds.remove(beliefId);
@@ -222,6 +257,25 @@ class AppState extends ChangeNotifier {
     return true;
   }
 
+  Future<void> _registerCountryDiscovery(Belief belief) async {
+    final currentCollection = getCountryCollection(belief.countryCode);
+
+    final result = CollectionService.registerDiscovery(
+      collection: currentCollection,
+      item: belief,
+    );
+
+    if (!result.wasNewDiscovery) return;
+
+    _countryCollections[belief.countryCode] = result.updatedCollection;
+    await _saveCountryCollections();
+
+    if (result.xpAwarded > 0) {
+      _xp += result.xpAwarded;
+      await _saveXp();
+    }
+  }
+
   Future<int> submitGuess(Belief belief, String selectedAnswer) async {
     final current = getInteraction(belief.id);
 
@@ -238,6 +292,8 @@ class AppState extends ChangeNotifier {
       await _saveRewarded();
       xpAwarded += belief.xpReward;
       discoveryAwarded = true;
+
+      await _registerCountryDiscovery(belief);
     }
 
     final updated = current.copyWith(
