@@ -4,6 +4,7 @@ import '../data/mock_countries.dart';
 import '../data/mock_beliefs.dart';
 import '../services/app_state.dart';
 import '../services/daily_service.dart';
+import '../widgets/player_identity_header.dart';
 import 'country_detail_screen.dart';
 import 'belief_detail_screen.dart';
 
@@ -30,6 +31,8 @@ class ExploreScreen extends StatelessWidget {
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
+          const PlayerIdentityHeader(compact: true),
+          const SizedBox(height: 16),
           Text(
             'Today’s Discovery 🌍',
             style: Theme.of(context).textTheme.headlineSmall,
@@ -40,7 +43,6 @@ class ExploreScreen extends StatelessWidget {
             style: Theme.of(context).textTheme.bodyMedium,
           ),
           const SizedBox(height: 16),
-
           _DailyCard(
             item: dailyBelief,
             completed: appState.dailyBeliefCompleted,
@@ -82,9 +84,7 @@ class ExploreScreen extends StatelessWidget {
               );
             },
           ),
-
           const SizedBox(height: 12),
-
           _DailyCard(
             item: dailySaying,
             completed: appState.dailySayingCompleted,
@@ -126,9 +126,7 @@ class ExploreScreen extends StatelessWidget {
               );
             },
           ),
-
           const SizedBox(height: 24),
-
           TextField(
             decoration: InputDecoration(
               hintText: 'Search countries or beliefs',

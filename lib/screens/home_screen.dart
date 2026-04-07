@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../services/app_state.dart';
+import '../widgets/player_identity_header.dart';
 
 class HomeScreen extends StatelessWidget {
   const HomeScreen({super.key});
@@ -16,28 +17,18 @@ class HomeScreen extends StatelessWidget {
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
+          const PlayerIdentityHeader(),
+          const SizedBox(height: 16),
           Text(
-            'Welcome, Explorer',
-            style: Theme.of(context).textTheme.headlineMedium,
+            'Welcome back',
+            style: Theme.of(context).textTheme.headlineSmall,
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: 6),
           Text(
-            'Level ${appState.level} • ${appState.xp} XP',
-            style: Theme.of(context).textTheme.bodyLarge,
+            'Your journey through the world of beliefs is growing every day.',
+            style: Theme.of(context).textTheme.bodyMedium,
           ),
-          const SizedBox(height: 12),
-          LinearProgressIndicator(
-            value: appState.levelProgress,
-            minHeight: 10,
-            borderRadius: BorderRadius.circular(12),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            appState.level >= 5
-                ? 'Max level reached'
-                : '${appState.nextLevelXp - appState.xp} XP to next level',
-          ),
-          const SizedBox(height: 24),
+          const SizedBox(height: 20),
           Card(
             child: Padding(
               padding: const EdgeInsets.all(20),
@@ -45,34 +36,14 @@ class HomeScreen extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    'Daily Discovery',
+                    'Progress Snapshot',
                     style: Theme.of(context).textTheme.titleLarge,
                   ),
                   const SizedBox(height: 12),
-                  const Text('Early birthday wishes bring bad luck.'),
-                  const SizedBox(height: 8),
-                  const Text('Country: Germany'),
-                  const SizedBox(height: 16),
-                  ElevatedButton(
-                    onPressed: () {},
-                    child: const Text('Reveal'),
-                  ),
-                ],
-              ),
-            ),
-          ),
-          const SizedBox(height: 16),
-          Card(
-            child: Padding(
-              padding: const EdgeInsets.all(20),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text('Progress Snapshot'),
-                  const SizedBox(height: 12),
-                  Text('Saved beliefs: ${appState.favoriteBeliefIds.length}'),
-                  Text('Current level: ${appState.level}'),
-                  Text('Total XP: ${appState.xp}'),
+                  Text('Total discoveries: ${appState.totalDiscoveries}'),
+                  Text('Countries explored: ${appState.countriesExplored}'),
+                  Text('Current streak: ${appState.currentStreak}'),
+                  Text('Favorites saved: ${appState.favoritesCount}'),
                 ],
               ),
             ),

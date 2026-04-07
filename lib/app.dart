@@ -5,6 +5,7 @@ import 'screens/explore_screen.dart';
 import 'screens/quiz_screen.dart';
 import 'screens/collection_screen.dart';
 import 'screens/profile_screen.dart';
+import 'widgets/level_up_listener.dart';
 
 class BeliefAtlasApp extends StatelessWidget {
   const BeliefAtlasApp({super.key});
@@ -47,7 +48,12 @@ class _MainNavigationState extends State<MainNavigation> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: _screens[_selectedIndex],
+      body: Stack(
+        children: [
+          _screens[_selectedIndex],
+          const LevelUpListener(),
+        ],
+      ),
       bottomNavigationBar: NavigationBar(
         selectedIndex: _selectedIndex,
         onDestinationSelected: _onItemTapped,

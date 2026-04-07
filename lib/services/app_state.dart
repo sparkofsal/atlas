@@ -7,6 +7,8 @@ import '../models/belief.dart';
 import '../models/country_collection.dart';
 import '../models/daily_state.dart';
 import '../models/item_interaction.dart';
+import '../models/level_up_event.dart';
+import '../models/player_identity.dart';
 import 'collection_migration_service.dart';
 import 'collection_service.dart';
 import 'daily_service.dart';
@@ -27,6 +29,10 @@ class AppState extends ChangeNotifier {
   static const String collectionMigrationVersionKey =
       'collection_migration_version';
 
+  static const String usernameKey = 'player_username';
+  static const String avatarIdKey = 'player_avatar_id';
+  static const String profileSetupCompletedKey = 'profile_setup_completed';
+
   final Set<String> _favoriteBeliefIds = {};
   final Set<String> _rewardedBeliefIds = {};
   final Map<String, ItemInteraction> _interactions = {};
@@ -34,6 +40,9 @@ class AppState extends ChangeNotifier {
 
   int _xp = 0;
   late DailyState _dailyState;
+  PlayerIdentity _playerIdentity = PlayerIdentity.initial();
+
+  LevelUpEvent? _pendingLevelUpEvent;
 
   AppState() {
     _dailyState = DailyState.initial(DailyService.todayKey());
@@ -47,6 +56,18 @@ class AppState extends ChangeNotifier {
   bool get dailyBeliefCompleted => _dailyState.dailyBeliefCompleted;
   bool get dailySayingCompleted => _dailyState.dailySayingCompleted;
   int get currentStreak => _dailyState.currentStreak;
+
+  PlayerIdentity get playerIdentity => _playerIdentity;
+  String get username => _playerIdentity.username;
+  String get avatarId => _playerIdentity.avatarId;
+  bool get hasCompletedProfileSetup => _playerIdentity.hasCompletedProfileSetup;
+
+  LevelUpEvent? get pendingLevelUpEvent => _pendingLevelUpEvent;
+
+  int get favoritesCount => _favoriteBeliefIds.length;
+  int get totalDiscoveries => _rewardedBeliefIds.length;
+  int get countriesExplored =>
+      getCountryProgressList().where((item) => item.discoveredCount > 0).length;
 
   bool isFavorite(String beliefId) {
     return _favoriteBeliefIds.contains(beliefId);
@@ -68,58 +89,105 @@ class AppState extends ChangeNotifier {
     }).toList();
   }
 
-  int get level {
-    if (_xp >= 350) return 5;
-    if (_xp >= 220) return 4;
-    if (_xp >= 120) return 3;
-    if (_xp >= 50) return 2;
-    return 1;
+  static bool isValidUsername(String value) {
+    final trimmed = value.trim();
+    final regex = RegExp(r'^[A-Za-z0-9_]{3,16}$');
+    return regex.hasMatch(trimmed);
   }
 
-  int get nextLevelXp {
+  static int xpThresholdForLevel(int level) {
+    if (level <= 1) return 0;
+
     switch (level) {
-      case 1:
-        return 50;
       case 2:
-        return 120;
+        return 50;
       case 3:
-        return 220;
+        return 120;
       case 4:
+        return 220;
+      case 5:
         return 350;
       default:
-        return 350;
+        final n = level - 5;
+        return 350 + (n * 180) + (((n - 1) * n * 25) ~/ 2);
     }
+  }
+
+  int get level {
+    int currentLevel = 1;
+    while (_xp >= xpThresholdForLevel(currentLevel + 1)) {
+      currentLevel++;
+    }
+    return currentLevel;
+  }
+
+  int get nextLevelXp => xpThresholdForLevel(level + 1);
+
+  int get xpToNextLevel {
+    return nextLevelXp - _xp;
   }
 
   double get levelProgress {
-    if (level >= 5) return 1.0;
+    final currentLevelXp = xpThresholdForLevel(level);
+    final nextLevelTarget = xpThresholdForLevel(level + 1);
+    final span = nextLevelTarget - currentLevelXp;
 
-    int currentLevelMin;
-    int nextLevelMax;
+    if (span <= 0) return 1.0;
+    return (_xp - currentLevelXp) / span;
+  }
 
-    switch (level) {
-      case 1:
-        currentLevelMin = 0;
-        nextLevelMax = 50;
-        break;
-      case 2:
-        currentLevelMin = 50;
-        nextLevelMax = 120;
-        break;
-      case 3:
-        currentLevelMin = 120;
-        nextLevelMax = 220;
-        break;
-      case 4:
-        currentLevelMin = 220;
-        nextLevelMax = 350;
-        break;
-      default:
-        currentLevelMin = 0;
-        nextLevelMax = 50;
+  String titleForLevel(int currentLevel) {
+    if (currentLevel >= 50) return 'Atlas Master';
+    if (currentLevel >= 30) return 'Reality Challenger';
+    if (currentLevel >= 20) return 'Atlas Scholar';
+    if (currentLevel >= 15) return 'Mind Voyager';
+    if (currentLevel >= 10) return 'World Thinker';
+    if (currentLevel >= 8) return 'Knowledge Hunter';
+    if (currentLevel >= 5) return 'Cultural Seeker';
+    if (currentLevel >= 3) return 'Belief Explorer';
+    return 'Curious Mind';
+  }
+
+  String get currentTitle => titleForLevel(level);
+
+  void clearPendingLevelUpEvent() {
+    _pendingLevelUpEvent = null;
+    notifyListeners();
+  }
+
+  void _setLevelUpEventIfNeeded(int oldLevel, int newLevel) {
+    if (newLevel <= oldLevel) return;
+
+    final oldTitle = titleForLevel(oldLevel);
+    final newTitle = titleForLevel(newLevel);
+
+    _pendingLevelUpEvent = LevelUpEvent(
+      id: DateTime.now().microsecondsSinceEpoch.toString(),
+      oldLevel: oldLevel,
+      newLevel: newLevel,
+      oldTitle: oldTitle,
+      newTitle: newTitle,
+    );
+  }
+
+  Future<void> updatePlayerProfile({
+    required String username,
+    required String avatarId,
+  }) async {
+    final trimmed = username.trim();
+
+    if (!isValidUsername(trimmed)) {
+      return;
     }
 
-    return (_xp - currentLevelMin) / (nextLevelMax - currentLevelMin);
+    _playerIdentity = _playerIdentity.copyWith(
+      username: trimmed,
+      avatarId: avatarId,
+      hasCompletedProfileSetup: true,
+    );
+
+    await _savePlayerIdentity();
+    notifyListeners();
   }
 
   Future<void> loadData() async {
@@ -138,6 +206,13 @@ class AppState extends ChangeNotifier {
       ..addAll(savedRewarded);
 
     _xp = savedXp;
+
+    _playerIdentity = PlayerIdentity(
+      username: prefs.getString(usernameKey) ?? '',
+      avatarId: prefs.getString(avatarIdKey) ?? 'owl',
+      hasCompletedProfileSetup:
+          prefs.getBool(profileSetupCompletedKey) ?? false,
+    );
 
     _dailyState = DailyState(
       dateKey: prefs.getString(dailyDateKey) ?? DailyService.todayKey(),
@@ -219,6 +294,16 @@ class AppState extends ChangeNotifier {
     await prefs.setStringList(rewardedKey, _rewardedBeliefIds.toList());
   }
 
+  Future<void> _savePlayerIdentity() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(usernameKey, _playerIdentity.username);
+    await prefs.setString(avatarIdKey, _playerIdentity.avatarId);
+    await prefs.setBool(
+      profileSetupCompletedKey,
+      _playerIdentity.hasCompletedProfileSetup,
+    );
+  }
+
   Future<void> _saveDailyState() async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(dailyDateKey, _dailyState.dateKey);
@@ -271,8 +356,10 @@ class AppState extends ChangeNotifier {
   }
 
   Future<void> addXp(int amount) async {
+    final oldLevel = level;
     _xp += amount;
     await _saveXp();
+    _setLevelUpEventIfNeeded(oldLevel, level);
     notifyListeners();
   }
 
@@ -281,17 +368,20 @@ class AppState extends ChangeNotifier {
       return false;
     }
 
+    final oldLevel = level;
+
     _rewardedBeliefIds.add(beliefId);
     await _saveRewarded();
 
     _xp += xpAmount;
     await _saveXp();
 
+    _setLevelUpEventIfNeeded(oldLevel, level);
     notifyListeners();
     return true;
   }
 
-  Future<void> _registerCountryDiscovery(Belief belief) async {
+  Future<int> _registerCountryDiscovery(Belief belief) async {
     final currentCollection = getCountryCollection(belief.countryCode);
 
     final result = CollectionService.registerDiscovery(
@@ -299,15 +389,12 @@ class AppState extends ChangeNotifier {
       item: belief,
     );
 
-    if (!result.wasNewDiscovery) return;
+    if (!result.wasNewDiscovery) return 0;
 
     _countryCollections[belief.countryCode] = result.updatedCollection;
     await _saveCountryCollections();
 
-    if (result.xpAwarded > 0) {
-      _xp += result.xpAwarded;
-      await _saveXp();
-    }
+    return result.xpAwarded;
   }
 
   Future<int> submitGuess(Belief belief, String selectedAnswer) async {
@@ -317,6 +404,7 @@ class AppState extends ChangeNotifier {
       return 0;
     }
 
+    final oldLevel = level;
     final isCorrect = selectedAnswer == belief.countryName;
     int xpAwarded = isCorrect ? 10 : 3;
 
@@ -327,7 +415,8 @@ class AppState extends ChangeNotifier {
       xpAwarded += belief.xpReward;
       discoveryAwarded = true;
 
-      await _registerCountryDiscovery(belief);
+      final milestoneXp = await _registerCountryDiscovery(belief);
+      xpAwarded += milestoneXp;
     }
 
     final updated = current.copyWith(
@@ -343,6 +432,8 @@ class AppState extends ChangeNotifier {
 
     await _saveInteractions();
     await _saveXp();
+
+    _setLevelUpEventIfNeeded(oldLevel, level);
     notifyListeners();
 
     return xpAwarded;
@@ -355,6 +446,8 @@ class AppState extends ChangeNotifier {
       return 0;
     }
 
+    final oldLevel = level;
+
     final updated = current.copyWith(
       hasReacted: true,
       reactionType: reactionType,
@@ -366,6 +459,8 @@ class AppState extends ChangeNotifier {
 
     await _saveInteractions();
     await _saveXp();
+
+    _setLevelUpEventIfNeeded(oldLevel, level);
     notifyListeners();
 
     return 2;
@@ -380,6 +475,8 @@ class AppState extends ChangeNotifier {
       return false;
     }
 
+    final oldLevel = level;
+
     _dailyState = DailyService.completeDailyItem(
       _dailyState,
       itemType: 'belief',
@@ -388,6 +485,8 @@ class AppState extends ChangeNotifier {
 
     await _saveDailyState();
     await _saveXp();
+
+    _setLevelUpEventIfNeeded(oldLevel, level);
     notifyListeners();
     return true;
   }
@@ -401,6 +500,8 @@ class AppState extends ChangeNotifier {
       return false;
     }
 
+    final oldLevel = level;
+
     _dailyState = DailyService.completeDailyItem(
       _dailyState,
       itemType: 'saying',
@@ -409,6 +510,8 @@ class AppState extends ChangeNotifier {
 
     await _saveDailyState();
     await _saveXp();
+
+    _setLevelUpEventIfNeeded(oldLevel, level);
     notifyListeners();
     return true;
   }
