@@ -1,21 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import '../data/mock_countries.dart';
-import '../data/mock_beliefs.dart';
 import '../services/app_state.dart';
 import '../services/daily_service.dart';
+import '../widgets/country_progress_card.dart';
 import '../widgets/player_identity_header.dart';
-import 'country_detail_screen.dart';
 import 'belief_detail_screen.dart';
+import 'country_detail_screen.dart';
 
 class ExploreScreen extends StatelessWidget {
   const ExploreScreen({super.key});
-
-  int getBeliefCount(String countryCode) {
-    return mockBeliefs
-        .where((belief) => belief.countryCode == countryCode)
-        .length;
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -23,6 +16,7 @@ class ExploreScreen extends StatelessWidget {
 
     final dailyBelief = DailyService.getDailyBelief();
     final dailySaying = DailyService.getDailySaying();
+    final countryProgress = appState.getCountryProgressList();
 
     return Scaffold(
       appBar: AppBar(
@@ -127,41 +121,29 @@ class ExploreScreen extends StatelessWidget {
             },
           ),
           const SizedBox(height: 24),
-          TextField(
-            decoration: InputDecoration(
-              hintText: 'Search countries or beliefs',
-              prefixIcon: const Icon(Icons.search),
-              filled: true,
-              fillColor: Colors.white,
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(16),
-                borderSide: BorderSide.none,
-              ),
-            ),
-          ),
-          const SizedBox(height: 20),
           Text(
-            'Countries',
-            style: Theme.of(context).textTheme.titleLarge,
+            'Explore by Country 🌍',
+            style: Theme.of(context).textTheme.headlineSmall,
           ),
-          const SizedBox(height: 12),
-          ...mockCountries.map(
-            (country) => Card(
-              child: ListTile(
-                leading: Text(
-                  country.flagEmoji,
-                  style: const TextStyle(fontSize: 24),
-                ),
-                title: Text(country.name),
-                subtitle: Text(
-                  '${getBeliefCount(country.code)} beliefs available',
-                ),
-                trailing: const Icon(Icons.chevron_right),
+          const SizedBox(height: 8),
+          Text(
+            'Choose a country to explore intentionally and grow your collection.',
+            style: Theme.of(context).textTheme.bodyMedium,
+          ),
+          const SizedBox(height: 14),
+          ...countryProgress.map(
+            (progress) => Padding(
+              padding: const EdgeInsets.only(bottom: 12),
+              child: CountryProgressCard(
+                progress: progress,
+                playerLevel: appState.level,
                 onTap: () {
                   Navigator.push(
                     context,
                     MaterialPageRoute(
-                      builder: (_) => CountryDetailScreen(country: country),
+                      builder: (_) => CountryDetailScreen(
+                        countryCode: progress.countryCode,
+                      ),
                     ),
                   );
                 },

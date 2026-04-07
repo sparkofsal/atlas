@@ -1,25 +1,40 @@
 import 'package:flutter/material.dart';
-import '../models/country.dart';
-import '../models/belief.dart';
+import 'package:provider/provider.dart';
+import '../data/mock_countries.dart';
 import '../data/mock_beliefs.dart';
+import '../models/belief.dart';
+import '../services/app_state.dart';
 import 'belief_detail_screen.dart';
 
 class CountryDetailScreen extends StatelessWidget {
-  final Country country;
+  final String countryCode;
 
   const CountryDetailScreen({
     super.key,
-    required this.country,
+    required this.countryCode,
   });
 
-  List<Belief> get countryBeliefs {
-    return mockBeliefs
-        .where((belief) => belief.countryCode == country.code)
-        .toList();
+  List<Belief> getCountryBeliefs(BuildContext context) {
+    final appState = Provider.of<AppState>(context, listen: false);
+
+    return mockBeliefs.where((belief) {
+      final isSameCountry = belief.countryCode == countryCode;
+
+      final isUnlocked = belief.contentType == 'belief' ||
+          (belief.contentType == 'saying' && appState.level >= 2);
+
+      return isSameCountry && isUnlocked;
+    }).toList();
   }
 
   @override
   Widget build(BuildContext context) {
+    final country = mockCountries.firstWhere((item) => item.code == countryCode);
+    final beliefs = getCountryBeliefs(context);
+    final progress = Provider.of<AppState>(context).getCountryProgressList().firstWhere(
+          (item) => item.countryCode == countryCode,
+        );
+
     return Scaffold(
       appBar: AppBar(
         title: Text(country.name),
@@ -50,10 +65,23 @@ class CountryDetailScreen extends StatelessWidget {
                           country.region,
                           style: Theme.of(context).textTheme.bodyMedium,
                         ),
-                        const SizedBox(height: 6),
+                        const SizedBox(height: 8),
                         Text(
-                          '${countryBeliefs.length} beliefs available',
+                          '${progress.discoveredCount}/${progress.totalCount} discovered',
                           style: Theme.of(context).textTheme.bodyMedium,
+                        ),
+                        const SizedBox(height: 8),
+                        LinearProgressIndicator(
+                          value: progress.totalCount == 0
+                              ? 0
+                              : progress.discoveredCount / progress.totalCount,
+                          minHeight: 8,
+                          borderRadius: BorderRadius.circular(999),
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          '${progress.completionPercentage.toStringAsFixed(0)}% complete',
+                          style: Theme.of(context).textTheme.bodySmall,
                         ),
                       ],
                     ),
@@ -64,17 +92,15 @@ class CountryDetailScreen extends StatelessWidget {
           ),
           const SizedBox(height: 20),
           Text(
-            'Beliefs',
+            'Discoveries',
             style: Theme.of(context).textTheme.titleLarge,
           ),
           const SizedBox(height: 12),
-          ...countryBeliefs.map(
+          ...beliefs.map(
             (belief) => Card(
               child: ListTile(
                 title: Text(belief.title),
-                subtitle: Text(
-                  belief.categoryName,
-                ),
+                subtitle: Text('${belief.categoryName} • ${belief.contentType}'),
                 trailing: const Icon(Icons.chevron_right),
                 onTap: () {
                   Navigator.push(
