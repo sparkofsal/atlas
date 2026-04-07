@@ -93,6 +93,9 @@ class DailyService {
       }
     }
 
+    final updatedBestStreak =
+        updatedStreak > synced.bestStreak ? updatedStreak : synced.bestStreak;
+
     return synced.copyWith(
       dailyBeliefCompleted:
           itemType == 'belief' ? true : synced.dailyBeliefCompleted,
@@ -100,6 +103,7 @@ class DailyService {
           itemType == 'saying' ? true : synced.dailySayingCompleted,
       lastActiveDateKey: today,
       currentStreak: updatedStreak,
+      bestStreak: updatedBestStreak,
     );
   }
 }

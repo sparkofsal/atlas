@@ -4,6 +4,7 @@ class DailyState {
   final bool dailySayingCompleted;
   final String? lastActiveDateKey;
   final int currentStreak;
+  final int bestStreak;
 
   const DailyState({
     required this.dateKey,
@@ -11,6 +12,7 @@ class DailyState {
     required this.dailySayingCompleted,
     required this.lastActiveDateKey,
     required this.currentStreak,
+    required this.bestStreak,
   });
 
   factory DailyState.initial(String todayKey) {
@@ -20,6 +22,7 @@ class DailyState {
       dailySayingCompleted: false,
       lastActiveDateKey: null,
       currentStreak: 0,
+      bestStreak: 0,
     );
   }
 
@@ -29,6 +32,7 @@ class DailyState {
     bool? dailySayingCompleted,
     String? lastActiveDateKey,
     int? currentStreak,
+    int? bestStreak,
   }) {
     return DailyState(
       dateKey: dateKey ?? this.dateKey,
@@ -38,6 +42,7 @@ class DailyState {
           dailySayingCompleted ?? this.dailySayingCompleted,
       lastActiveDateKey: lastActiveDateKey ?? this.lastActiveDateKey,
       currentStreak: currentStreak ?? this.currentStreak,
+      bestStreak: bestStreak ?? this.bestStreak,
     );
   }
 }

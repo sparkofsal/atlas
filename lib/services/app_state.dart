@@ -6,12 +6,14 @@ import '../data/mock_countries.dart';
 import '../models/belief.dart';
 import '../models/country_collection.dart';
 import '../models/daily_state.dart';
+import '../models/guess_result.dart';
 import '../models/item_interaction.dart';
 import '../models/level_up_event.dart';
 import '../models/player_identity.dart';
 import 'collection_migration_service.dart';
 import 'collection_service.dart';
 import 'daily_service.dart';
+import 'interaction_service.dart';
 
 class AppState extends ChangeNotifier {
   static const String favoritesKey = 'favorites';
@@ -23,6 +25,7 @@ class AppState extends ChangeNotifier {
   static const String dailySayingCompletedKey = 'daily_saying_completed';
   static const String lastActiveDateKey = 'last_active_date';
   static const String currentStreakKey = 'current_streak';
+  static const String bestStreakKey = 'best_streak';
 
   static const String interactionsKey = 'item_interactions';
   static const String countryCollectionsKey = 'country_collections';
@@ -33,12 +36,20 @@ class AppState extends ChangeNotifier {
   static const String avatarIdKey = 'player_avatar_id';
   static const String profileSetupCompletedKey = 'profile_setup_completed';
 
+  static const String currentComboKey = 'current_combo';
+  static const String bestComboKey = 'best_combo';
+  static const String lastGuessCorrectKey = 'last_guess_correct';
+
   final Set<String> _favoriteBeliefIds = {};
   final Set<String> _rewardedBeliefIds = {};
   final Map<String, ItemInteraction> _interactions = {};
   final Map<String, CountryCollection> _countryCollections = {};
 
   int _xp = 0;
+  int _currentCombo = 0;
+  int _bestCombo = 0;
+  bool _lastGuessCorrect = false;
+
   late DailyState _dailyState;
   PlayerIdentity _playerIdentity = PlayerIdentity.initial();
 
@@ -52,10 +63,15 @@ class AppState extends ChangeNotifier {
   Set<String> get rewardedBeliefIds => _rewardedBeliefIds;
   int get xp => _xp;
 
+  int get currentCombo => _currentCombo;
+  int get bestCombo => _bestCombo;
+  bool get lastGuessCorrect => _lastGuessCorrect;
+
   DailyState get dailyState => _dailyState;
   bool get dailyBeliefCompleted => _dailyState.dailyBeliefCompleted;
   bool get dailySayingCompleted => _dailyState.dailySayingCompleted;
   int get currentStreak => _dailyState.currentStreak;
+  int get bestStreak => _dailyState.bestStreak;
 
   PlayerIdentity get playerIdentity => _playerIdentity;
   String get username => _playerIdentity.username;
@@ -68,6 +84,42 @@ class AppState extends ChangeNotifier {
   int get totalDiscoveries => _rewardedBeliefIds.length;
   int get countriesExplored =>
       getCountryProgressList().where((item) => item.discoveredCount > 0).length;
+
+  String get nextComboGoalHint {
+    if (_currentCombo == 0) {
+      return 'Start a combo with a correct guess';
+    }
+    if (_currentCombo < 5) {
+      return '${5 - _currentCombo} more correct for combo x5';
+    }
+    return 'Combo x$_currentCombo is active';
+  }
+
+  String? get nearCountryGoalHint {
+    final progressList = getCountryProgressList()
+        .where((item) => item.discoveredCount > 0 && item.discoveredCount < item.totalCount)
+        .toList();
+
+    if (progressList.isEmpty) return null;
+
+    progressList.sort((a, b) {
+      final remainingA = a.totalCount - a.discoveredCount;
+      final remainingB = b.totalCount - b.discoveredCount;
+      return remainingA.compareTo(remainingB);
+    });
+
+    final target = progressList.first;
+    final remaining = target.totalCount - target.discoveredCount;
+
+    if (remaining <= 2) {
+      final country = mockCountries.firstWhere(
+        (item) => item.code == target.countryCode,
+      );
+      return 'Only $remaining more item${remaining == 1 ? '' : 's'} to complete ${country.name}';
+    }
+
+    return null;
+  }
 
   bool isFavorite(String beliefId) {
     return _favoriteBeliefIds.contains(beliefId);
@@ -206,6 +258,9 @@ class AppState extends ChangeNotifier {
       ..addAll(savedRewarded);
 
     _xp = savedXp;
+    _currentCombo = prefs.getInt(currentComboKey) ?? 0;
+    _bestCombo = prefs.getInt(bestComboKey) ?? 0;
+    _lastGuessCorrect = prefs.getBool(lastGuessCorrectKey) ?? false;
 
     _playerIdentity = PlayerIdentity(
       username: prefs.getString(usernameKey) ?? '',
@@ -220,6 +275,7 @@ class AppState extends ChangeNotifier {
       dailySayingCompleted: prefs.getBool(dailySayingCompletedKey) ?? false,
       lastActiveDateKey: prefs.getString(lastActiveDateKey),
       currentStreak: prefs.getInt(currentStreakKey) ?? 0,
+      bestStreak: prefs.getInt(bestStreakKey) ?? 0,
     );
 
     final savedInteractionsRaw = prefs.getString(interactionsKey);
@@ -244,7 +300,6 @@ class AppState extends ChangeNotifier {
 
     _dailyState = DailyService.syncState(_dailyState);
     await _saveDailyState();
-
     await _runCollectionBackfillIfNeeded(prefs);
 
     notifyListeners();
@@ -326,6 +381,7 @@ class AppState extends ChangeNotifier {
     }
 
     await prefs.setInt(currentStreakKey, _dailyState.currentStreak);
+    await prefs.setInt(bestStreakKey, _dailyState.bestStreak);
   }
 
   Future<void> _saveInteractions() async {
@@ -342,6 +398,13 @@ class AppState extends ChangeNotifier {
       _countryCollections.map((key, value) => MapEntry(key, value.toJson())),
     );
     await prefs.setString(countryCollectionsKey, encoded);
+  }
+
+  Future<void> _saveChallengeState() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setInt(currentComboKey, _currentCombo);
+    await prefs.setInt(bestComboKey, _bestCombo);
+    await prefs.setBool(lastGuessCorrectKey, _lastGuessCorrect);
   }
 
   Future<void> toggleFavorite(String beliefId) async {
@@ -397,27 +460,56 @@ class AppState extends ChangeNotifier {
     return result.xpAwarded;
   }
 
-  Future<int> submitGuess(Belief belief, String selectedAnswer) async {
+  Future<GuessResult> submitGuess(Belief belief, String selectedAnswer) async {
     final current = getInteraction(belief.id);
 
     if (current.hasGuessed) {
-      return 0;
+      return GuessResult.empty();
     }
 
     final oldLevel = level;
-    final isCorrect = selectedAnswer == belief.countryName;
-    int xpAwarded = isCorrect ? 10 : 3;
+    final prompt = InteractionService.buildPrompt(belief);
+    final isCorrect = selectedAnswer == prompt.correctAnswer;
+
+    final comboBefore = _currentCombo;
+    int comboAfter = 0;
+    bool comboBroken = false;
+
+    int baseXp = isCorrect ? 10 : 3;
+    int comboBonusXp = 0;
+    int discoveryXp = 0;
+    int milestoneXp = 0;
+    int surpriseXp = 0;
+    String? surpriseMessage;
+
+    if (isCorrect) {
+      _currentCombo += 1;
+      comboAfter = _currentCombo;
+      if (_currentCombo > _bestCombo) {
+        _bestCombo = _currentCombo;
+      }
+      comboBonusXp = InteractionService.comboBonus(_currentCombo);
+    } else {
+      comboBroken = _currentCombo > 0;
+      _currentCombo = 0;
+      comboAfter = 0;
+    }
 
     bool discoveryAwarded = false;
     if (!_rewardedBeliefIds.contains(belief.id)) {
       _rewardedBeliefIds.add(belief.id);
       await _saveRewarded();
-      xpAwarded += belief.xpReward;
+
+      discoveryXp = belief.xpReward;
       discoveryAwarded = true;
 
-      final milestoneXp = await _registerCountryDiscovery(belief);
-      xpAwarded += milestoneXp;
+      milestoneXp = await _registerCountryDiscovery(belief);
     }
+
+    surpriseXp =
+        InteractionService.surpriseBonus(belief, _currentCombo, isCorrect);
+    surpriseMessage =
+        InteractionService.surpriseMessage(belief, _currentCombo, isCorrect);
 
     final updated = current.copyWith(
       hasGuessed: true,
@@ -428,15 +520,34 @@ class AppState extends ChangeNotifier {
     );
 
     _interactions[belief.id] = updated;
-    _xp += xpAwarded;
+    _lastGuessCorrect = isCorrect;
+
+    final totalXp =
+        baseXp + comboBonusXp + discoveryXp + milestoneXp + surpriseXp;
+
+    _xp += totalXp;
 
     await _saveInteractions();
     await _saveXp();
+    await _saveChallengeState();
 
     _setLevelUpEventIfNeeded(oldLevel, level);
     notifyListeners();
 
-    return xpAwarded;
+    return GuessResult(
+      alreadyGuessed: false,
+      isCorrect: isCorrect,
+      totalXp: totalXp,
+      baseXp: baseXp,
+      comboBonusXp: comboBonusXp,
+      discoveryXp: discoveryXp,
+      milestoneXp: milestoneXp,
+      surpriseXp: surpriseXp,
+      comboBefore: comboBefore,
+      comboAfter: comboAfter,
+      comboBroken: comboBroken,
+      surpriseMessage: surpriseMessage,
+    );
   }
 
   Future<int> submitReaction(String itemId, String reactionType) async {

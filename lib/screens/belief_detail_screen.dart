@@ -47,7 +47,7 @@ class BeliefDetailScreen extends StatelessWidget {
     final appState = Provider.of<AppState>(context);
     final isSaved = appState.isFavorite(belief.id);
     final interaction = appState.getInteraction(belief.id);
-    final options = InteractionService.buildGuessOptions(belief);
+    final prompt = InteractionService.buildPrompt(belief);
 
     return Scaffold(
       appBar: AppBar(
@@ -62,12 +62,24 @@ class BeliefDetailScreen extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Chip(
-                    label: Text(
-                      belief.contentType == 'saying'
-                          ? '🗣️ Saying'
-                          : '🌍 Belief',
-                    ),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: [
+                      Chip(
+                        label: Text(
+                          belief.contentType == 'saying'
+                              ? '🗣️ Saying'
+                              : '🌍 Belief',
+                        ),
+                      ),
+                      Chip(
+                        label: Text('Combo x${appState.currentCombo}'),
+                      ),
+                      Chip(
+                        label: Text('Streak ${appState.currentStreak}'),
+                      ),
+                    ],
                   ),
                   const SizedBox(height: 8),
                   Text(
@@ -87,41 +99,69 @@ class BeliefDetailScreen extends StatelessWidget {
                       ),
                     ],
                   ),
+                  const SizedBox(height: 16),
+                  Text(
+                    appState.nextComboGoalHint,
+                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                          color: Colors.indigo,
+                          fontWeight: FontWeight.w600,
+                        ),
+                  ),
+                  if (appState.nearCountryGoalHint != null) ...[
+                    const SizedBox(height: 6),
+                    Text(
+                      appState.nearCountryGoalHint!,
+                      style: Theme.of(context).textTheme.bodySmall,
+                    ),
+                  ],
                   const SizedBox(height: 20),
 
                   if (!interaction.hasGuessed) ...[
                     Text(
-                      'Guess the country before reveal',
+                      prompt.prompt,
                       style: Theme.of(context).textTheme.titleLarge,
                     ),
                     const SizedBox(height: 12),
                     Text(
-                      InteractionService.partialContent(belief),
+                      prompt.displayText,
                       style: Theme.of(context).textTheme.bodyLarge,
                     ),
                     const SizedBox(height: 20),
-                    ...options.map(
+                    ...prompt.options.map(
                       (option) => Padding(
                         padding: const EdgeInsets.only(bottom: 10),
                         child: SizedBox(
                           width: double.infinity,
                           child: ElevatedButton(
                             onPressed: () async {
-                              final xpGained =
+                              final result =
                                   await appState.submitGuess(belief, option);
 
-                              if (context.mounted) {
-                                final updated =
-                                    appState.getInteraction(belief.id);
+                              if (!context.mounted) return;
 
+                              String message = result.isCorrect
+                                  ? 'Correct! +${result.totalXp} XP'
+                                  : 'Wrong • +${result.totalXp} XP';
+
+                              if (result.comboBroken) {
+                                message += ' • Combo broken';
+                              } else if (result.comboAfter >= 2 &&
+                                  result.isCorrect) {
+                                message += ' • Combo x${result.comboAfter}';
+                              }
+
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                  content: Text(message),
+                                  duration: const Duration(seconds: 2),
+                                ),
+                              );
+
+                              if (result.surpriseMessage != null) {
                                 ScaffoldMessenger.of(context).showSnackBar(
                                   SnackBar(
-                                    content: Text(
-                                      updated.isCorrect
-                                          ? 'Correct! +$xpGained XP'
-                                          : 'Not quite • +$xpGained XP',
-                                    ),
-                                    duration: const Duration(seconds: 1),
+                                    content: Text(result.surpriseMessage!),
+                                    duration: const Duration(seconds: 2),
                                   ),
                                 );
                               }
@@ -137,8 +177,7 @@ class BeliefDetailScreen extends StatelessWidget {
                       style: Theme.of(context).textTheme.titleLarge,
                     ),
                     const SizedBox(height: 12),
-
-                    ...options.map(
+                    ...prompt.options.map(
                       (option) => Padding(
                         padding: const EdgeInsets.only(bottom: 10),
                         child: SizedBox(
@@ -147,7 +186,7 @@ class BeliefDetailScreen extends StatelessWidget {
                             style: ElevatedButton.styleFrom(
                               backgroundColor: getGuessButtonColor(
                                 option,
-                                belief.countryName,
+                                prompt.correctAnswer,
                                 interaction.selectedAnswer,
                                 interaction.hasGuessed,
                               ),
@@ -158,13 +197,29 @@ class BeliefDetailScreen extends StatelessWidget {
                         ),
                       ),
                     ),
-
                     const SizedBox(height: 8),
                     Text(
-                      'Correct answer: ${belief.countryName}',
+                      'Correct answer: ${prompt.correctAnswer}',
                       style: Theme.of(context).textTheme.titleMedium,
                     ),
                     const SizedBox(height: 16),
+                    if (prompt.mode == 'true_fake' && !prompt.statementIsReal)
+                      Text(
+                        'That statement was made up. Here is the real entry from ${belief.countryName}:',
+                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                              color: Colors.indigo,
+                              fontWeight: FontWeight.w600,
+                            ),
+                      )
+                    else if (prompt.mode == 'true_fake' && prompt.statementIsReal)
+                      Text(
+                        'It was real. Here is the full entry:',
+                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                              color: Colors.indigo,
+                              fontWeight: FontWeight.w600,
+                            ),
+                      ),
+                    if (prompt.mode == 'true_fake') const SizedBox(height: 12),
                     Text(
                       belief.description,
                       style: Theme.of(context).textTheme.bodyLarge,

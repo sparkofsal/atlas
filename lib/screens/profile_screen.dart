@@ -38,8 +38,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
   }
 
   Future<void> _showProfileEditor(BuildContext context, AppState appState) async {
-    final usernameController =
-        TextEditingController(text: appState.username);
+    final usernameController = TextEditingController(text: appState.username);
     String selectedAvatarId = appState.avatarId;
     String? errorText;
 
@@ -186,7 +185,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
   Widget build(BuildContext context) {
     final appState = Provider.of<AppState>(context);
 
-
     if (!appState.hasCompletedProfileSetup) {
       final selectedPreset = _presetById(appState.avatarId);
 
@@ -328,6 +326,21 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 label: 'Current Streak',
                 value: '${appState.currentStreak}',
                 icon: Icons.local_fire_department,
+              ),
+              _StatCard(
+                label: 'Best Streak',
+                value: '${appState.bestStreak}',
+                icon: Icons.workspace_premium,
+              ),
+              _StatCard(
+                label: 'Current Combo',
+                value: 'x${appState.currentCombo}',
+                icon: Icons.flash_on,
+              ),
+              _StatCard(
+                label: 'Best Combo',
+                value: 'x${appState.bestCombo}',
+                icon: Icons.bolt,
               ),
               _StatCard(
                 label: 'Favorites',
