@@ -9,6 +9,7 @@ import '../models/daily_state.dart';
 import '../models/guess_result.dart';
 import '../models/item_interaction.dart';
 import '../models/level_up_event.dart';
+import '../models/play_style.dart';
 import '../models/player_identity.dart';
 import 'collection_migration_service.dart';
 import 'collection_service.dart';
@@ -40,6 +41,9 @@ class AppState extends ChangeNotifier {
   static const String bestComboKey = 'best_combo';
   static const String lastGuessCorrectKey = 'last_guess_correct';
 
+  static const String lastPlayStyleKey = 'last_play_style';
+  static const String lastSelectedCountryKey = 'last_selected_country';
+
   final Set<String> _favoriteBeliefIds = {};
   final Set<String> _rewardedBeliefIds = {};
   final Map<String, ItemInteraction> _interactions = {};
@@ -49,6 +53,9 @@ class AppState extends ChangeNotifier {
   int _currentCombo = 0;
   int _bestCombo = 0;
   bool _lastGuessCorrect = false;
+
+  String _lastSelectedPlayStyleId = PlayStyle.exploreFreely.id;
+  String? _lastSelectedCountryCode;
 
   late DailyState _dailyState;
   PlayerIdentity _playerIdentity = PlayerIdentity.initial();
@@ -79,6 +86,9 @@ class AppState extends ChangeNotifier {
   bool get hasCompletedProfileSetup => _playerIdentity.hasCompletedProfileSetup;
 
   LevelUpEvent? get pendingLevelUpEvent => _pendingLevelUpEvent;
+
+  PlayStyle get activePlayStyle => PlayStyleX.fromId(_lastSelectedPlayStyleId);
+  String? get lastSelectedCountryCode => _lastSelectedCountryCode;
 
   int get favoritesCount => _favoriteBeliefIds.length;
   int get totalDiscoveries => _rewardedBeliefIds.length;
@@ -139,6 +149,21 @@ class AppState extends ChangeNotifier {
       final collection = getCountryCollection(country.code);
       return CollectionService.buildProgress(collection);
     }).toList();
+  }
+
+  Future<void> setPlayStyle(PlayStyle style, {String? countryCode}) async {
+    _lastSelectedPlayStyleId = style.id;
+    if (countryCode != null) {
+      _lastSelectedCountryCode = countryCode;
+    }
+    await _saveExplorationState();
+    notifyListeners();
+  }
+
+  Future<void> setSelectedCountryCode(String? countryCode) async {
+    _lastSelectedCountryCode = countryCode;
+    await _saveExplorationState();
+    notifyListeners();
   }
 
   static bool isValidUsername(String value) {
@@ -261,6 +286,10 @@ class AppState extends ChangeNotifier {
     _currentCombo = prefs.getInt(currentComboKey) ?? 0;
     _bestCombo = prefs.getInt(bestComboKey) ?? 0;
     _lastGuessCorrect = prefs.getBool(lastGuessCorrectKey) ?? false;
+
+    _lastSelectedPlayStyleId =
+        prefs.getString(lastPlayStyleKey) ?? PlayStyle.exploreFreely.id;
+    _lastSelectedCountryCode = prefs.getString(lastSelectedCountryKey);
 
     _playerIdentity = PlayerIdentity(
       username: prefs.getString(usernameKey) ?? '',
@@ -407,6 +436,16 @@ class AppState extends ChangeNotifier {
     await prefs.setBool(lastGuessCorrectKey, _lastGuessCorrect);
   }
 
+  Future<void> _saveExplorationState() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(lastPlayStyleKey, _lastSelectedPlayStyleId);
+    if (_lastSelectedCountryCode != null) {
+      await prefs.setString(lastSelectedCountryKey, _lastSelectedCountryCode!);
+    } else {
+      await prefs.remove(lastSelectedCountryKey);
+    }
+  }
+
   Future<void> toggleFavorite(String beliefId) async {
     if (_favoriteBeliefIds.contains(beliefId)) {
       _favoriteBeliefIds.remove(beliefId);
@@ -503,7 +542,8 @@ class AppState extends ChangeNotifier {
       discoveryXp = belief.xpReward;
       discoveryAwarded = true;
 
-      milestoneXp = await _registerCountryDiscovery(belief);
+      final milestoneXpResult = await _registerCountryDiscovery(belief);
+      milestoneXp += milestoneXpResult;
     }
 
     surpriseXp =

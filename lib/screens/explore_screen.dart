@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import '../models/play_style.dart';
 import '../services/app_state.dart';
 import '../services/daily_service.dart';
-import '../widgets/country_progress_card.dart';
+import '../services/exploration_service.dart';
+import '../widgets/play_style_selector.dart';
 import '../widgets/player_identity_header.dart';
 import 'belief_detail_screen.dart';
 import 'country_detail_screen.dart';
@@ -14,9 +16,26 @@ class ExploreScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     final appState = Provider.of<AppState>(context);
 
+    final progressList = appState.getCountryProgressList();
+    final suggestion = ExplorationService.buildSuggestion(
+      playerLevel: appState.level,
+      xpToNextLevel: appState.xpToNextLevel,
+      currentCombo: appState.currentCombo,
+      lastSelectedPlayStyle: appState.activePlayStyle,
+      lastSelectedCountryCode: appState.lastSelectedCountryCode,
+      progressList: progressList,
+    );
+
+    final feed = ExplorationService.buildFeed(
+      playStyle: appState.activePlayStyle,
+      playerLevel: appState.level,
+      discoveredIds: appState.rewardedBeliefIds,
+      progressList: progressList,
+      selectedCountryCode: appState.lastSelectedCountryCode,
+    );
+
     final dailyBelief = DailyService.getDailyBelief();
     final dailySaying = DailyService.getDailySaying();
-    final countryProgress = appState.getCountryProgressList();
 
     return Scaffold(
       appBar: AppBar(
@@ -27,49 +46,172 @@ class ExploreScreen extends StatelessWidget {
         children: [
           const PlayerIdentityHeader(compact: true),
           const SizedBox(height: 16),
+
+          Card(
+            child: Padding(
+              padding: const EdgeInsets.all(18),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Smart Suggestion',
+                    style: Theme.of(context).textTheme.titleLarge,
+                  ),
+                  const SizedBox(height: 10),
+                  Text(
+                    suggestion.title,
+                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                          color: Colors.indigo,
+                          fontWeight: FontWeight.w700,
+                        ),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(suggestion.subtitle),
+                  const SizedBox(height: 12),
+                  ElevatedButton(
+                    onPressed: () async {
+                      await appState.setPlayStyle(
+                        suggestion.playStyle,
+                        countryCode: suggestion.countryCode,
+                      );
+
+                      if (suggestion.countryCode != null && context.mounted) {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => CountryDetailScreen(
+                              countryCode: suggestion.countryCode!,
+                            ),
+                          ),
+                        );
+                      }
+                    },
+                    child: Text(suggestion.ctaLabel),
+                  ),
+                ],
+              ),
+            ),
+          ),
+
+          const SizedBox(height: 20),
+
           Text(
-            'Today’s Discovery 🌍',
+            'Choose Your Path',
             style: Theme.of(context).textTheme.headlineSmall,
           ),
           const SizedBox(height: 8),
           Text(
-            'Current streak: ${appState.currentStreak} day${appState.currentStreak == 1 ? '' : 's'}',
+            'Pick how you want to explore right now.',
             style: Theme.of(context).textTheme.bodyMedium,
           ),
-          const SizedBox(height: 16),
-          _DailyCard(
-            item: dailyBelief,
-            completed: appState.dailyBeliefCompleted,
-            rewardText: '+25 XP',
-            buttonLabel:
-                appState.dailyBeliefCompleted ? 'Completed' : 'Complete',
-            onComplete: () async {
-              if (appState.dailyBeliefCompleted) {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (_) => BeliefDetailScreen(belief: dailyBelief),
-                  ),
-                );
-                return;
-              }
+          const SizedBox(height: 12),
 
-              final granted = await appState.completeDailyBelief();
-
-              if (context.mounted) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(
-                    content: Text(
-                      granted
-                          ? 'Daily Belief completed • +25 XP'
-                          : 'Daily Belief already completed',
-                    ),
-                    duration: const Duration(seconds: 1),
-                  ),
+          PlayStyleSelector(
+            selectedStyle: appState.activePlayStyle,
+            sayingsUnlocked: appState.level >= 2,
+            onSelected: (style) async {
+              if (style == PlayStyle.finishCountry) {
+                final target = ExplorationService.bestCountryToFinish(
+                  progressList: progressList,
+                  playerLevel: appState.level,
+                  preferredCountryCode: appState.lastSelectedCountryCode,
                 );
+                await appState.setPlayStyle(style, countryCode: target);
+              } else {
+                await appState.setPlayStyle(style);
               }
             },
-            onOpen: () {
+          ),
+
+          const SizedBox(height: 24),
+
+          Text(
+            'Recommended Feed',
+            style: Theme.of(context).textTheme.headlineSmall,
+          ),
+          const SizedBox(height: 8),
+          Text(
+            appState.activePlayStyle.subtitle,
+            style: Theme.of(context).textTheme.bodyMedium,
+          ),
+          const SizedBox(height: 14),
+
+          if (feed.isEmpty)
+            Card(
+              child: Padding(
+                padding: const EdgeInsets.all(18),
+                child: Text(
+                  appState.activePlayStyle == PlayStyle.exploreSayings
+                      ? 'No sayings available yet. Reach Level 2 or unlock more countries.'
+                      : 'No content available for this path right now. Try another play style.',
+                ),
+              ),
+            )
+          else
+            ...feed.take(10).map(
+              (item) {
+                final discovered = appState.rewardedBeliefIds.contains(item.id);
+
+                return Padding(
+                  padding: const EdgeInsets.only(bottom: 12),
+                  child: Card(
+                    child: ListTile(
+                      leading: Text(
+                        item.contentType == 'saying' ? '🗣️' : '🌍',
+                        style: const TextStyle(fontSize: 24),
+                      ),
+                      title: Text(item.title),
+                      subtitle: Text(
+                        '${item.countryName} • ${item.categoryName}',
+                      ),
+                      trailing: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(
+                            discovered
+                                ? Icons.check_circle
+                                : Icons.auto_awesome,
+                            color: discovered ? Colors.green : Colors.amber,
+                            size: 18,
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            discovered ? 'Seen' : 'New',
+                            style: Theme.of(context).textTheme.bodySmall,
+                          ),
+                        ],
+                      ),
+                      onTap: () async {
+                        await appState.setSelectedCountryCode(item.countryCode);
+
+                        if (context.mounted) {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => BeliefDetailScreen(belief: item),
+                            ),
+                          );
+                        }
+                      },
+                    ),
+                  ),
+                );
+              },
+            ),
+
+          const SizedBox(height: 24),
+
+          Text(
+            'Daily Discovery',
+            style: Theme.of(context).textTheme.headlineSmall,
+          ),
+          const SizedBox(height: 12),
+
+          _DailyMiniCard(
+            title: dailyBelief.title,
+            label: 'Daily Belief',
+            completed: appState.dailyBeliefCompleted,
+            onTap: () {
               Navigator.push(
                 context,
                 MaterialPageRoute(
@@ -78,40 +220,12 @@ class ExploreScreen extends StatelessWidget {
               );
             },
           ),
-          const SizedBox(height: 12),
-          _DailyCard(
-            item: dailySaying,
+          const SizedBox(height: 10),
+          _DailyMiniCard(
+            title: dailySaying.title,
+            label: 'Daily Saying',
             completed: appState.dailySayingCompleted,
-            rewardText: '+25 XP',
-            buttonLabel:
-                appState.dailySayingCompleted ? 'Completed' : 'Complete',
-            onComplete: () async {
-              if (appState.dailySayingCompleted) {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (_) => BeliefDetailScreen(belief: dailySaying),
-                  ),
-                );
-                return;
-              }
-
-              final granted = await appState.completeDailySaying();
-
-              if (context.mounted) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(
-                    content: Text(
-                      granted
-                          ? 'Daily Saying completed • +25 XP'
-                          : 'Daily Saying already completed',
-                    ),
-                    duration: const Duration(seconds: 1),
-                  ),
-                );
-              }
-            },
-            onOpen: () {
+            onTap: () {
               Navigator.push(
                 context,
                 MaterialPageRoute(
@@ -120,110 +234,35 @@ class ExploreScreen extends StatelessWidget {
               );
             },
           ),
-          const SizedBox(height: 24),
-          Text(
-            'Explore by Country 🌍',
-            style: Theme.of(context).textTheme.headlineSmall,
-          ),
-          const SizedBox(height: 8),
-          Text(
-            'Choose a country to explore intentionally and grow your collection.',
-            style: Theme.of(context).textTheme.bodyMedium,
-          ),
-          const SizedBox(height: 14),
-          ...countryProgress.map(
-            (progress) => Padding(
-              padding: const EdgeInsets.only(bottom: 12),
-              child: CountryProgressCard(
-                progress: progress,
-                playerLevel: appState.level,
-                onTap: () {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (_) => CountryDetailScreen(
-                        countryCode: progress.countryCode,
-                      ),
-                    ),
-                  );
-                },
-              ),
-            ),
-          ),
         ],
       ),
     );
   }
 }
 
-class _DailyCard extends StatelessWidget {
-  final dynamic item;
+class _DailyMiniCard extends StatelessWidget {
+  final String title;
+  final String label;
   final bool completed;
-  final String rewardText;
-  final String buttonLabel;
-  final Future<void> Function() onComplete;
-  final VoidCallback onOpen;
+  final VoidCallback onTap;
 
-  const _DailyCard({
-    required this.item,
+  const _DailyMiniCard({
+    required this.title,
+    required this.label,
     required this.completed,
-    required this.rewardText,
-    required this.buttonLabel,
-    required this.onComplete,
-    required this.onOpen,
+    required this.onTap,
   });
 
   @override
   Widget build(BuildContext context) {
-    final typeLabel =
-        item.contentType == 'saying' ? '🗣️ Daily Saying' : '🌍 Daily Belief';
-
     return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(typeLabel, style: Theme.of(context).textTheme.titleMedium),
-            const SizedBox(height: 8),
-            Text(
-              item.title,
-              style: Theme.of(context).textTheme.titleLarge,
-            ),
-            const SizedBox(height: 8),
-            Text(item.description),
-            const SizedBox(height: 12),
-            Row(
-              children: [
-                Chip(
-                  label: Text(completed ? 'Completed' : 'Not completed'),
-                ),
-                const SizedBox(width: 8),
-                Chip(
-                  label: Text(rewardText),
-                ),
-              ],
-            ),
-            const SizedBox(height: 12),
-            Row(
-              children: [
-                Expanded(
-                  child: OutlinedButton(
-                    onPressed: onOpen,
-                    child: const Text('Open'),
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: ElevatedButton(
-                    onPressed: onComplete,
-                    child: Text(buttonLabel),
-                  ),
-                ),
-              ],
-            ),
-          ],
+      child: ListTile(
+        title: Text(title),
+        subtitle: Text(label),
+        trailing: Chip(
+          label: Text(completed ? 'Done' : 'Open'),
         ),
+        onTap: onTap,
       ),
     );
   }
