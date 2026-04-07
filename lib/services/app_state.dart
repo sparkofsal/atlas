@@ -7,6 +7,7 @@ import '../models/belief.dart';
 import '../models/country_collection.dart';
 import '../models/daily_state.dart';
 import '../models/item_interaction.dart';
+import 'collection_migration_service.dart';
 import 'collection_service.dart';
 import 'daily_service.dart';
 
@@ -23,6 +24,8 @@ class AppState extends ChangeNotifier {
 
   static const String interactionsKey = 'item_interactions';
   static const String countryCollectionsKey = 'country_collections';
+  static const String collectionMigrationVersionKey =
+      'collection_migration_version';
 
   final Set<String> _favoriteBeliefIds = {};
   final Set<String> _rewardedBeliefIds = {};
@@ -167,7 +170,38 @@ class AppState extends ChangeNotifier {
     _dailyState = DailyService.syncState(_dailyState);
     await _saveDailyState();
 
+    await _runCollectionBackfillIfNeeded(prefs);
+
     notifyListeners();
+  }
+
+  Future<void> _runCollectionBackfillIfNeeded(SharedPreferences prefs) async {
+    final savedVersion = prefs.getInt(collectionMigrationVersionKey) ?? 0;
+
+    if (savedVersion >= CollectionMigrationService.currentMigrationVersion) {
+      return;
+    }
+
+    final result = CollectionMigrationService.backfillCollections(
+      rewardedItemIds: _rewardedBeliefIds,
+      interactions: _interactions,
+      existingCollections: _countryCollections,
+    );
+
+    _countryCollections
+      ..clear()
+      ..addAll(result.updatedCollections);
+
+    if (result.xpAwarded > 0) {
+      _xp += result.xpAwarded;
+      await _saveXp();
+    }
+
+    await _saveCountryCollections();
+    await prefs.setInt(
+      collectionMigrationVersionKey,
+      CollectionMigrationService.currentMigrationVersion,
+    );
   }
 
   Future<void> _saveFavorites() async {
