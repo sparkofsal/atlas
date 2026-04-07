@@ -3,21 +3,25 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../data/mock_countries.dart';
+import '../data/mock_beliefs.dart';
 import '../models/belief.dart';
 import '../models/country_collection.dart';
 import '../models/daily_state.dart';
+import '../models/discovery_run.dart';
 import '../models/goal_reward_event.dart';
 import '../models/guess_result.dart';
 import '../models/item_interaction.dart';
 import '../models/level_up_event.dart';
 import '../models/play_style.dart';
 import '../models/player_identity.dart';
+import '../models/run_reward_event.dart';
 import '../models/session_goal.dart';
 import 'collection_migration_service.dart';
 import 'collection_service.dart';
 import 'daily_service.dart';
 import 'goal_service.dart';
 import 'interaction_service.dart';
+import 'run_service.dart';
 
 class AppState extends ChangeNotifier {
   static const String favoritesKey = 'favorites';
@@ -51,6 +55,10 @@ class AppState extends ChangeNotifier {
   static const String sessionGoalsDateKey = 'session_goals_date';
   static const String recentGoalTemplatesKey = 'recent_goal_templates';
 
+  static const String activeRunKey = 'active_run';
+  static const String activeRunDateKey = 'active_run_date';
+  static const String recentRunTypesKey = 'recent_run_types';
+
   final Set<String> _favoriteBeliefIds = {};
   final Set<String> _rewardedBeliefIds = {};
   final Map<String, ItemInteraction> _interactions = {};
@@ -59,6 +67,10 @@ class AppState extends ChangeNotifier {
   List<SessionGoal> _activeGoals = [];
   List<String> _recentGoalTemplateIds = [];
   String _goalsDateKey = '';
+
+  DiscoveryRun? _activeRun;
+  List<String> _recentRunTypes = [];
+  String _runDateKey = '';
 
   int _xp = 0;
   int _currentCombo = 0;
@@ -73,6 +85,7 @@ class AppState extends ChangeNotifier {
 
   LevelUpEvent? _pendingLevelUpEvent;
   GoalRewardEvent? _pendingGoalRewardEvent;
+  RunRewardEvent? _pendingRunRewardEvent;
 
   AppState() {
     _dailyState = DailyState.initial(DailyService.todayKey());
@@ -99,8 +112,10 @@ class AppState extends ChangeNotifier {
 
   LevelUpEvent? get pendingLevelUpEvent => _pendingLevelUpEvent;
   GoalRewardEvent? get pendingGoalRewardEvent => _pendingGoalRewardEvent;
+  RunRewardEvent? get pendingRunRewardEvent => _pendingRunRewardEvent;
 
   List<SessionGoal> get activeGoals => _activeGoals;
+  DiscoveryRun? get activeRun => _activeRun;
 
   PlayStyle get activePlayStyle => PlayStyleX.fromId(_lastSelectedPlayStyleId);
   String? get lastSelectedCountryCode => _lastSelectedCountryCode;
@@ -255,6 +270,11 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
+  void clearPendingRunRewardEvent() {
+    _pendingRunRewardEvent = null;
+    notifyListeners();
+  }
+
   void _setLevelUpEventIfNeeded(int oldLevel, int newLevel) {
     if (newLevel <= oldLevel) return;
 
@@ -275,6 +295,13 @@ class AppState extends ChangeNotifier {
     if (_recentGoalTemplateIds.length > 8) {
       _recentGoalTemplateIds =
           _recentGoalTemplateIds.sublist(_recentGoalTemplateIds.length - 8);
+    }
+  }
+
+  void _rememberRunType(String runType) {
+    _recentRunTypes.add(runType);
+    if (_recentRunTypes.length > 6) {
+      _recentRunTypes = _recentRunTypes.sublist(_recentRunTypes.length - 6);
     }
   }
 
@@ -334,6 +361,22 @@ class AppState extends ChangeNotifier {
     await _saveGoals();
   }
 
+  Future<void> _ensureRunCurrent() async {
+    final today = DailyService.todayKey();
+
+    if (_runDateKey != today || _activeRun == null) {
+      _runDateKey = today;
+      _activeRun = RunService.generateRun(
+        todayKey: today,
+        currentCombo: _currentCombo,
+        progressList: getCountryProgressList(),
+        recentRunTypes: _recentRunTypes,
+        playerLevel: level,
+      );
+      await _saveRun();
+    }
+  }
+
   Future<void> _refreshGoalsAndRewards() async {
     await _ensureGoalsCurrent();
 
@@ -377,6 +420,49 @@ class AppState extends ChangeNotifier {
     }
 
     await _saveGoals();
+  }
+
+  Future<void> _refreshRunProgress({Belief? discoveredBelief}) async {
+    await _ensureRunCurrent();
+    if (_activeRun == null) return;
+
+    DiscoveryRun updatedRun = _activeRun!;
+
+    if (discoveredBelief != null) {
+      updatedRun = RunService.updateRunForDiscovery(
+        run: updatedRun,
+        belief: discoveredBelief,
+        currentCombo: _currentCombo,
+        progressList: getCountryProgressList(),
+        rewardedIds: _rewardedBeliefIds,
+      );
+    }
+
+    updatedRun = RunService.updateRunForCombo(
+      run: updatedRun,
+      currentCombo: _currentCombo,
+    );
+
+    if (updatedRun.completed && !updatedRun.rewarded) {
+      final oldLevel = level;
+      final rewardedRun = updatedRun.copyWith(rewarded: true);
+      _activeRun = rewardedRun;
+      _xp += rewardedRun.rewardXp;
+      _rememberRunType(rewardedRun.runType);
+
+      _pendingRunRewardEvent = RunRewardEvent(
+        id: DateTime.now().microsecondsSinceEpoch.toString(),
+        message: 'Run complete: ${rewardedRun.title} • +${rewardedRun.rewardXp} XP',
+      );
+
+      await _saveRun();
+      await _saveXp();
+      _setLevelUpEventIfNeeded(oldLevel, level);
+      return;
+    }
+
+    _activeRun = updatedRun;
+    await _saveRun();
   }
 
   Future<void> loadData() async {
@@ -452,10 +538,21 @@ class AppState extends ChangeNotifier {
     _recentGoalTemplateIds =
         prefs.getStringList(recentGoalTemplatesKey) ?? [];
 
+    final savedRunRaw = prefs.getString(activeRunKey);
+    _activeRun = null;
+    if (savedRunRaw != null && savedRunRaw.isNotEmpty) {
+      _activeRun = DiscoveryRun.fromJson(
+        Map<String, dynamic>.from(jsonDecode(savedRunRaw)),
+      );
+    }
+    _runDateKey = prefs.getString(activeRunDateKey) ?? '';
+    _recentRunTypes = prefs.getStringList(recentRunTypesKey) ?? [];
+
     _dailyState = DailyService.syncState(_dailyState);
     await _saveDailyState();
     await _runCollectionBackfillIfNeeded(prefs);
     await _ensureGoalsCurrent();
+    await _ensureRunCurrent();
 
     notifyListeners();
   }
@@ -580,6 +677,17 @@ class AppState extends ChangeNotifier {
     await prefs.setStringList(recentGoalTemplatesKey, _recentGoalTemplateIds);
   }
 
+  Future<void> _saveRun() async {
+    final prefs = await SharedPreferences.getInstance();
+    if (_activeRun != null) {
+      await prefs.setString(activeRunKey, jsonEncode(_activeRun!.toJson()));
+    } else {
+      await prefs.remove(activeRunKey);
+    }
+    await prefs.setString(activeRunDateKey, _runDateKey);
+    await prefs.setStringList(recentRunTypesKey, _recentRunTypes);
+  }
+
   Future<void> toggleFavorite(String beliefId) async {
     if (_favoriteBeliefIds.contains(beliefId)) {
       _favoriteBeliefIds.remove(beliefId);
@@ -595,6 +703,7 @@ class AppState extends ChangeNotifier {
     final oldLevel = level;
     _xp += amount;
     await _refreshGoalsAndRewards();
+    await _refreshRunProgress();
     await _saveXp();
     _setLevelUpEventIfNeeded(oldLevel, level);
     notifyListeners();
@@ -612,6 +721,7 @@ class AppState extends ChangeNotifier {
 
     _xp += xpAmount;
     await _refreshGoalsAndRewards();
+    await _refreshRunProgress();
     await _saveXp();
 
     _setLevelUpEventIfNeeded(oldLevel, level);
@@ -707,6 +817,11 @@ class AppState extends ChangeNotifier {
     await _saveXp();
     await _saveChallengeState();
     await _refreshGoalsAndRewards();
+    if (discoveryAwarded) {
+      await _refreshRunProgress(discoveredBelief: belief);
+    } else {
+      await _refreshRunProgress();
+    }
 
     _setLevelUpEventIfNeeded(oldLevel, level);
     notifyListeners();
@@ -748,6 +863,7 @@ class AppState extends ChangeNotifier {
     await _saveInteractions();
     await _saveXp();
     await _refreshGoalsAndRewards();
+    await _refreshRunProgress();
 
     _setLevelUpEventIfNeeded(oldLevel, level);
     notifyListeners();
@@ -775,6 +891,7 @@ class AppState extends ChangeNotifier {
     await _saveDailyState();
     await _saveXp();
     await _refreshGoalsAndRewards();
+    await _refreshRunProgress();
 
     _setLevelUpEventIfNeeded(oldLevel, level);
     notifyListeners();
@@ -801,6 +918,7 @@ class AppState extends ChangeNotifier {
     await _saveDailyState();
     await _saveXp();
     await _refreshGoalsAndRewards();
+    await _refreshRunProgress();
 
     _setLevelUpEventIfNeeded(oldLevel, level);
     notifyListeners();

@@ -9,6 +9,7 @@ class HomeScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final appState = Provider.of<AppState>(context);
+    final run = appState.activeRun;
 
     return Scaffold(
       appBar: AppBar(
@@ -19,6 +20,51 @@ class HomeScreen extends StatelessWidget {
         children: [
           const PlayerIdentityHeader(),
           const SizedBox(height: 16),
+
+          if (run != null) ...[
+            Text(
+              'Active Run 🔥',
+              style: Theme.of(context).textTheme.headlineSmall,
+            ),
+            const SizedBox(height: 8),
+            Card(
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      run.title,
+                      style: Theme.of(context).textTheme.titleLarge,
+                    ),
+                    const SizedBox(height: 6),
+                    Text(run.subtitle),
+                    const SizedBox(height: 12),
+                    LinearProgressIndicator(
+                      value: run.target == 0
+                          ? 0
+                          : (run.progress / run.target).clamp(0.0, 1.0),
+                      minHeight: 8,
+                      borderRadius: BorderRadius.circular(999),
+                    ),
+                    const SizedBox(height: 8),
+                    Row(
+                      children: [
+                        Text('${run.progress}/${run.target}'),
+                        const Spacer(),
+                        Chip(
+                          label: Text(
+                            run.rewarded ? 'Done' : '+${run.rewardXp} XP',
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(height: 16),
+          ],
 
           Text(
             'Today\'s Goals 🎯',

@@ -7,6 +7,7 @@ import 'screens/collection_screen.dart';
 import 'screens/profile_screen.dart';
 import 'widgets/goal_reward_listener.dart';
 import 'widgets/level_up_listener.dart';
+import 'widgets/run_reward_listener.dart';
 
 class BeliefAtlasApp extends StatelessWidget {
   const BeliefAtlasApp({super.key});
@@ -54,6 +55,7 @@ class _MainNavigationState extends State<MainNavigation> {
           _screens[_selectedIndex],
           const LevelUpListener(),
           const GoalRewardListener(),
+          const RunRewardListener(),
         ],
       ),
       bottomNavigationBar: NavigationBar(
