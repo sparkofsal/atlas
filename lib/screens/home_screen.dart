@@ -1,119 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import '../data/mock_countries.dart';
 import '../services/app_state.dart';
-import '../services/country_unlock_service.dart';
 import '../widgets/player_identity_header.dart';
-import 'country_detail_screen.dart';
 
 class HomeScreen extends StatelessWidget {
   const HomeScreen({super.key});
 
-  String? _suggestion(AppState appState) {
-    final progress = appState.getCountryProgressList();
-
-    final unlocked = progress.where((item) {
-      return CountryUnlockService.isUnlocked(
-        countryCode: item.countryCode,
-        playerLevel: appState.level,
-      );
-    }).toList();
-
-    final locked = progress.where((item) {
-      return !CountryUnlockService.isUnlocked(
-        countryCode: item.countryCode,
-        playerLevel: appState.level,
-      );
-    }).toList();
-
-    unlocked.sort(
-      (a, b) => b.completionPercentage.compareTo(a.completionPercentage),
-    );
-
-    final nearComplete = unlocked.where((item) {
-      final remaining = item.totalCount - item.discoveredCount;
-      return item.discoveredCount > 0 && remaining > 0 && remaining <= 2;
-    }).toList();
-
-    if (nearComplete.isNotEmpty) {
-      final target = nearComplete.first;
-      final country = mockCountries.firstWhere(
-        (item) => item.code == target.countryCode,
-      );
-      return 'You\'re close to completing ${country.name}';
-    }
-
-    final continueCountry = unlocked.where((item) {
-      return item.discoveredCount > 0 && item.completionPercentage < 100;
-    }).toList();
-
-    if (continueCountry.isNotEmpty) {
-      final target = continueCountry.first;
-      final country = mockCountries.firstWhere(
-        (item) => item.code == target.countryCode,
-      );
-      return 'Continue ${country.name} (${target.completionPercentage.toStringAsFixed(0)}%)';
-    }
-
-    if (locked.isNotEmpty) {
-      locked.sort((a, b) {
-        final aReq = CountryUnlockService.requiredLevel(a.countryCode);
-        final bReq = CountryUnlockService.requiredLevel(b.countryCode);
-        return aReq.compareTo(bReq);
-      });
-
-      final target = locked.first;
-      final country = mockCountries.firstWhere(
-        (item) => item.code == target.countryCode,
-      );
-      final requiredLevel = CountryUnlockService.requiredLevel(target.countryCode);
-      if (requiredLevel == appState.level + 1) {
-        return 'New country almost unlocked: ${country.name} at Level $requiredLevel';
-      }
-    }
-
-    return null;
-  }
-
-  String? _suggestionCountryCode(AppState appState) {
-    final progress = appState.getCountryProgressList();
-
-    final unlocked = progress.where((item) {
-      return CountryUnlockService.isUnlocked(
-        countryCode: item.countryCode,
-        playerLevel: appState.level,
-      );
-    }).toList();
-
-    unlocked.sort(
-      (a, b) => b.completionPercentage.compareTo(a.completionPercentage),
-    );
-
-    final nearComplete = unlocked.where((item) {
-      final remaining = item.totalCount - item.discoveredCount;
-      return item.discoveredCount > 0 && remaining > 0 && remaining <= 2;
-    }).toList();
-
-    if (nearComplete.isNotEmpty) {
-      return nearComplete.first.countryCode;
-    }
-
-    final continueCountry = unlocked.where((item) {
-      return item.discoveredCount > 0 && item.completionPercentage < 100;
-    }).toList();
-
-    if (continueCountry.isNotEmpty) {
-      return continueCountry.first.countryCode;
-    }
-
-    return null;
-  }
-
   @override
   Widget build(BuildContext context) {
     final appState = Provider.of<AppState>(context);
-    final suggestion = _suggestion(appState);
-    final suggestionCountryCode = _suggestionCountryCode(appState);
 
     return Scaffold(
       appBar: AppBar(
@@ -124,6 +19,68 @@ class HomeScreen extends StatelessWidget {
         children: [
           const PlayerIdentityHeader(),
           const SizedBox(height: 16),
+
+          Text(
+            'Today\'s Goals 🎯',
+            style: Theme.of(context).textTheme.headlineSmall,
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'Short, satisfying goals to guide this session.',
+            style: Theme.of(context).textTheme.bodyMedium,
+          ),
+          const SizedBox(height: 12),
+
+          ...appState.activeGoals.map(
+            (goal) => Padding(
+              padding: const EdgeInsets.only(bottom: 12),
+              child: Card(
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              goal.title,
+                              style: Theme.of(context).textTheme.titleMedium,
+                            ),
+                          ),
+                          Chip(
+                            label: Text(
+                              goal.rewarded
+                                  ? 'Done'
+                                  : '+${goal.rewardXp} XP',
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 6),
+                      Text(goal.subtitle),
+                      const SizedBox(height: 10),
+                      LinearProgressIndicator(
+                        value: goal.target == 0
+                            ? 0
+                            : (goal.progress / goal.target).clamp(0.0, 1.0),
+                        minHeight: 8,
+                        borderRadius: BorderRadius.circular(999),
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        '${goal.progress}/${goal.target}',
+                        style: Theme.of(context).textTheme.bodySmall,
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+
+          const SizedBox(height: 16),
+
           Text(
             'Welcome back',
             style: Theme.of(context).textTheme.headlineSmall,
@@ -133,48 +90,8 @@ class HomeScreen extends StatelessWidget {
             'Your journey through the world of beliefs is growing every day.',
             style: Theme.of(context).textTheme.bodyMedium,
           ),
-          if (suggestion != null) ...[
-            const SizedBox(height: 16),
-            Card(
-              child: Padding(
-                padding: const EdgeInsets.all(18),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Suggested Path',
-                      style: Theme.of(context).textTheme.titleLarge,
-                    ),
-                    const SizedBox(height: 10),
-                    Text(
-                      suggestion,
-                      style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                            color: Colors.indigo,
-                            fontWeight: FontWeight.w600,
-                          ),
-                    ),
-                    if (suggestionCountryCode != null) ...[
-                      const SizedBox(height: 12),
-                      ElevatedButton(
-                        onPressed: () {
-                          Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (_) => CountryDetailScreen(
-                                countryCode: suggestionCountryCode,
-                              ),
-                            ),
-                          );
-                        },
-                        child: const Text('Continue Exploring'),
-                      ),
-                    ],
-                  ],
-                ),
-              ),
-            ),
-          ],
           const SizedBox(height: 20),
+
           Card(
             child: Padding(
               padding: const EdgeInsets.all(20),

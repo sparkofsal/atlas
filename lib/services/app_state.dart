@@ -6,14 +6,17 @@ import '../data/mock_countries.dart';
 import '../models/belief.dart';
 import '../models/country_collection.dart';
 import '../models/daily_state.dart';
+import '../models/goal_reward_event.dart';
 import '../models/guess_result.dart';
 import '../models/item_interaction.dart';
 import '../models/level_up_event.dart';
 import '../models/play_style.dart';
 import '../models/player_identity.dart';
+import '../models/session_goal.dart';
 import 'collection_migration_service.dart';
 import 'collection_service.dart';
 import 'daily_service.dart';
+import 'goal_service.dart';
 import 'interaction_service.dart';
 
 class AppState extends ChangeNotifier {
@@ -44,10 +47,18 @@ class AppState extends ChangeNotifier {
   static const String lastPlayStyleKey = 'last_play_style';
   static const String lastSelectedCountryKey = 'last_selected_country';
 
+  static const String sessionGoalsKey = 'session_goals';
+  static const String sessionGoalsDateKey = 'session_goals_date';
+  static const String recentGoalTemplatesKey = 'recent_goal_templates';
+
   final Set<String> _favoriteBeliefIds = {};
   final Set<String> _rewardedBeliefIds = {};
   final Map<String, ItemInteraction> _interactions = {};
   final Map<String, CountryCollection> _countryCollections = {};
+
+  List<SessionGoal> _activeGoals = [];
+  List<String> _recentGoalTemplateIds = [];
+  String _goalsDateKey = '';
 
   int _xp = 0;
   int _currentCombo = 0;
@@ -61,6 +72,7 @@ class AppState extends ChangeNotifier {
   PlayerIdentity _playerIdentity = PlayerIdentity.initial();
 
   LevelUpEvent? _pendingLevelUpEvent;
+  GoalRewardEvent? _pendingGoalRewardEvent;
 
   AppState() {
     _dailyState = DailyState.initial(DailyService.todayKey());
@@ -86,6 +98,9 @@ class AppState extends ChangeNotifier {
   bool get hasCompletedProfileSetup => _playerIdentity.hasCompletedProfileSetup;
 
   LevelUpEvent? get pendingLevelUpEvent => _pendingLevelUpEvent;
+  GoalRewardEvent? get pendingGoalRewardEvent => _pendingGoalRewardEvent;
+
+  List<SessionGoal> get activeGoals => _activeGoals;
 
   PlayStyle get activePlayStyle => PlayStyleX.fromId(_lastSelectedPlayStyleId);
   String? get lastSelectedCountryCode => _lastSelectedCountryCode;
@@ -94,6 +109,9 @@ class AppState extends ChangeNotifier {
   int get totalDiscoveries => _rewardedBeliefIds.length;
   int get countriesExplored =>
       getCountryProgressList().where((item) => item.discoveredCount > 0).length;
+
+  int get dailyCompletedCount =>
+      (dailyBeliefCompleted ? 1 : 0) + (dailySayingCompleted ? 1 : 0);
 
   String get nextComboGoalHint {
     if (_currentCombo == 0) {
@@ -232,6 +250,11 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
+  void clearPendingGoalRewardEvent() {
+    _pendingGoalRewardEvent = null;
+    notifyListeners();
+  }
+
   void _setLevelUpEventIfNeeded(int oldLevel, int newLevel) {
     if (newLevel <= oldLevel) return;
 
@@ -245,6 +268,14 @@ class AppState extends ChangeNotifier {
       oldTitle: oldTitle,
       newTitle: newTitle,
     );
+  }
+
+  void _rememberGoalTemplate(String templateId) {
+    _recentGoalTemplateIds.add(templateId);
+    if (_recentGoalTemplateIds.length > 8) {
+      _recentGoalTemplateIds =
+          _recentGoalTemplateIds.sublist(_recentGoalTemplateIds.length - 8);
+    }
   }
 
   Future<void> updatePlayerProfile({
@@ -265,6 +296,87 @@ class AppState extends ChangeNotifier {
 
     await _savePlayerIdentity();
     notifyListeners();
+  }
+
+  Future<void> _ensureGoalsCurrent() async {
+    final today = DailyService.todayKey();
+
+    if (_goalsDateKey != today || _activeGoals.length < 2) {
+      _goalsDateKey = today;
+      _activeGoals = GoalService.generateGoals(
+        todayKey: today,
+        xp: _xp,
+        xpToNextLevel: xpToNextLevel,
+        currentCombo: _currentCombo,
+        totalDiscoveries: totalDiscoveries,
+        countriesExplored: countriesExplored,
+        dailyCompletedCount: dailyCompletedCount,
+        progressList: getCountryProgressList(),
+        recentTemplateIds: _recentGoalTemplateIds,
+      );
+      await _saveGoals();
+      return;
+    }
+
+    _activeGoals = _activeGoals
+        .map(
+          (goal) => GoalService.updateProgress(
+            goal: goal,
+            xp: _xp,
+            currentCombo: _currentCombo,
+            totalDiscoveries: totalDiscoveries,
+            countriesExplored: countriesExplored,
+            dailyCompletedCount: dailyCompletedCount,
+            progressList: getCountryProgressList(),
+          ),
+        )
+        .toList();
+    await _saveGoals();
+  }
+
+  Future<void> _refreshGoalsAndRewards() async {
+    await _ensureGoalsCurrent();
+
+    int bonusXp = 0;
+    final updatedGoals = <SessionGoal>[];
+    final completedMessages = <String>[];
+
+    for (final goal in _activeGoals) {
+      final updated = GoalService.updateProgress(
+        goal: goal,
+        xp: _xp,
+        currentCombo: _currentCombo,
+        totalDiscoveries: totalDiscoveries,
+        countriesExplored: countriesExplored,
+        dailyCompletedCount: dailyCompletedCount,
+        progressList: getCountryProgressList(),
+      );
+
+      if (updated.completed && !updated.rewarded) {
+        final rewardedGoal = updated.copyWith(rewarded: true);
+        updatedGoals.add(rewardedGoal);
+        bonusXp += rewardedGoal.rewardXp;
+        _rememberGoalTemplate(rewardedGoal.templateId);
+        completedMessages.add(
+          'Goal complete: ${rewardedGoal.title} • +${rewardedGoal.rewardXp} XP',
+        );
+      } else {
+        updatedGoals.add(updated);
+      }
+    }
+
+    _activeGoals = updatedGoals;
+
+    if (bonusXp > 0) {
+      _xp += bonusXp;
+      _pendingGoalRewardEvent = GoalRewardEvent(
+        id: DateTime.now().microsecondsSinceEpoch.toString(),
+        message: completedMessages.first,
+      );
+      await _saveXp();
+    }
+
+    await _saveGoals();
   }
 
   Future<void> loadData() async {
@@ -327,9 +439,23 @@ class AppState extends ChangeNotifier {
       });
     }
 
+    final savedGoalsRaw = prefs.getString(sessionGoalsKey);
+    _activeGoals = [];
+    if (savedGoalsRaw != null && savedGoalsRaw.isNotEmpty) {
+      final decoded = jsonDecode(savedGoalsRaw) as List<dynamic>;
+      _activeGoals = decoded
+          .map((item) => SessionGoal.fromJson(Map<String, dynamic>.from(item)))
+          .toList();
+    }
+
+    _goalsDateKey = prefs.getString(sessionGoalsDateKey) ?? '';
+    _recentGoalTemplateIds =
+        prefs.getStringList(recentGoalTemplatesKey) ?? [];
+
     _dailyState = DailyService.syncState(_dailyState);
     await _saveDailyState();
     await _runCollectionBackfillIfNeeded(prefs);
+    await _ensureGoalsCurrent();
 
     notifyListeners();
   }
@@ -446,6 +572,14 @@ class AppState extends ChangeNotifier {
     }
   }
 
+  Future<void> _saveGoals() async {
+    final prefs = await SharedPreferences.getInstance();
+    final encoded = jsonEncode(_activeGoals.map((g) => g.toJson()).toList());
+    await prefs.setString(sessionGoalsKey, encoded);
+    await prefs.setString(sessionGoalsDateKey, _goalsDateKey);
+    await prefs.setStringList(recentGoalTemplatesKey, _recentGoalTemplateIds);
+  }
+
   Future<void> toggleFavorite(String beliefId) async {
     if (_favoriteBeliefIds.contains(beliefId)) {
       _favoriteBeliefIds.remove(beliefId);
@@ -460,6 +594,7 @@ class AppState extends ChangeNotifier {
   Future<void> addXp(int amount) async {
     final oldLevel = level;
     _xp += amount;
+    await _refreshGoalsAndRewards();
     await _saveXp();
     _setLevelUpEventIfNeeded(oldLevel, level);
     notifyListeners();
@@ -476,6 +611,7 @@ class AppState extends ChangeNotifier {
     await _saveRewarded();
 
     _xp += xpAmount;
+    await _refreshGoalsAndRewards();
     await _saveXp();
 
     _setLevelUpEventIfNeeded(oldLevel, level);
@@ -570,6 +706,7 @@ class AppState extends ChangeNotifier {
     await _saveInteractions();
     await _saveXp();
     await _saveChallengeState();
+    await _refreshGoalsAndRewards();
 
     _setLevelUpEventIfNeeded(oldLevel, level);
     notifyListeners();
@@ -610,6 +747,7 @@ class AppState extends ChangeNotifier {
 
     await _saveInteractions();
     await _saveXp();
+    await _refreshGoalsAndRewards();
 
     _setLevelUpEventIfNeeded(oldLevel, level);
     notifyListeners();
@@ -636,6 +774,7 @@ class AppState extends ChangeNotifier {
 
     await _saveDailyState();
     await _saveXp();
+    await _refreshGoalsAndRewards();
 
     _setLevelUpEventIfNeeded(oldLevel, level);
     notifyListeners();
@@ -661,6 +800,7 @@ class AppState extends ChangeNotifier {
 
     await _saveDailyState();
     await _saveXp();
+    await _refreshGoalsAndRewards();
 
     _setLevelUpEventIfNeeded(oldLevel, level);
     notifyListeners();
