@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../services/app_state.dart';
+import 'app_feedback.dart';
 
 class GoalRewardListener extends StatefulWidget {
   const GoalRewardListener({super.key});
@@ -22,11 +23,10 @@ class _GoalRewardListenerState extends State<GoalRewardListener> {
 
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(event.message),
-            duration: const Duration(seconds: 2),
-          ),
+        AppFeedback.show(
+          context,
+          message: event.message,
+          icon: Icons.check_circle_outline,
         );
         appState.clearPendingGoalRewardEvent();
       });

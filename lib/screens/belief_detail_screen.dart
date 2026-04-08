@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import '../models/belief.dart';
 import '../services/app_state.dart';
 import '../services/interaction_service.dart';
+import '../widgets/app_feedback.dart';
 
 class BeliefDetailScreen extends StatelessWidget {
   final Belief belief;
@@ -119,9 +120,6 @@ class BeliefDetailScreen extends StatelessWidget {
                   ],
                   const SizedBox(height: 20),
 
-                  /// =========================
-                  /// GUESS PHASE
-                  /// =========================
                   if (!interaction.hasGuessed) ...[
                     Text(
                       prompt.prompt,
@@ -145,30 +143,38 @@ class BeliefDetailScreen extends StatelessWidget {
 
                               if (!context.mounted) return;
 
-                              String message = result.isCorrect
-                                  ? 'Correct! +${result.totalXp} XP'
-                                  : 'Wrong • +${result.totalXp} XP';
+                              String message;
+                              IconData icon;
 
-                              if (result.comboBroken) {
-                                message += ' • Combo broken';
-                              } else if (result.comboAfter >= 2 &&
-                                  result.isCorrect) {
-                                message += ' • Combo x${result.comboAfter}';
+                              if (result.isCorrect) {
+                                message = result.comboAfter >= 2
+                                    ? 'Nice! Correct • +${result.totalXp} XP • Combo x${result.comboAfter}'
+                                    : 'Nice! Correct • +${result.totalXp} XP';
+                                icon = Icons.check_circle_outline;
+                              } else {
+                                message = result.comboBroken
+                                    ? 'Unexpected 👀 Wrong guess • +${result.totalXp} XP • Combo broken'
+                                    : 'Not quite • +${result.totalXp} XP';
+                                icon = Icons.help_outline;
                               }
 
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                SnackBar(
-                                  content: Text(message),
-                                  duration: const Duration(seconds: 2),
-                                ),
+                              AppFeedback.show(
+                                context,
+                                message: message,
+                                icon: icon,
                               );
 
                               if (result.surpriseMessage != null) {
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  SnackBar(
-                                    content: Text(result.surpriseMessage!),
-                                    duration: const Duration(seconds: 2),
-                                  ),
+                                Future.delayed(
+                                  const Duration(milliseconds: 350),
+                                  () {
+                                    if (!context.mounted) return;
+                                    AppFeedback.show(
+                                      context,
+                                      message: result.surpriseMessage!,
+                                      icon: Icons.auto_awesome,
+                                    );
+                                  },
                                 );
                               }
                             },
@@ -177,12 +183,7 @@ class BeliefDetailScreen extends StatelessWidget {
                         ),
                       ),
                     ),
-                  ]
-
-                  /// =========================
-                  /// RESULT PHASE
-                  /// =========================
-                  else ...[
+                  ] else ...[
                     Text(
                       'Answer revealed',
                       style: Theme.of(context).textTheme.titleLarge,
@@ -214,7 +215,6 @@ class BeliefDetailScreen extends StatelessWidget {
                       style: Theme.of(context).textTheme.titleMedium,
                     ),
                     const SizedBox(height: 16),
-
                     if (prompt.mode == 'true_fake' && !prompt.statementIsReal)
                       Text(
                         'That statement was made up. Here is the real entry from ${belief.countryName}:',
@@ -232,10 +232,7 @@ class BeliefDetailScreen extends StatelessWidget {
                               fontWeight: FontWeight.w600,
                             ),
                       ),
-
-                    if (prompt.mode == 'true_fake')
-                      const SizedBox(height: 12),
-
+                    if (prompt.mode == 'true_fake') const SizedBox(height: 12),
                     Text(
                       belief.description,
                       style: Theme.of(context).textTheme.bodyLarge,
@@ -254,9 +251,6 @@ class BeliefDetailScreen extends StatelessWidget {
             ),
           ),
 
-          /// =========================
-          /// REACTIONS
-          /// =========================
           if (interaction.hasGuessed) ...[
             const SizedBox(height: 20),
             Text(
@@ -292,9 +286,6 @@ class BeliefDetailScreen extends StatelessWidget {
 
           const SizedBox(height: 20),
 
-          /// =========================
-          /// ACTION BUTTONS
-          /// =========================
           Row(
             children: [
               Expanded(
@@ -305,15 +296,14 @@ class BeliefDetailScreen extends StatelessWidget {
                     if (context.mounted) {
                       final nowSaved = appState.isFavorite(belief.id);
 
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(
-                          content: Text(
-                            nowSaved
-                                ? 'Saved to collection'
-                                : 'Removed from collection',
-                          ),
-                          duration: const Duration(seconds: 1),
-                        ),
+                      AppFeedback.show(
+                        context,
+                        message: nowSaved
+                            ? 'Saved to collection'
+                            : 'Removed from collection',
+                        icon: nowSaved
+                            ? Icons.bookmark_added_outlined
+                            : Icons.bookmark_remove_outlined,
                       );
                     }
                   },
@@ -362,15 +352,12 @@ class BeliefDetailScreen extends StatelessWidget {
                       await appState.submitReaction(itemId, reactionType);
 
                   if (context.mounted) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(
-                        content: Text(
-                          xpGained > 0
-                              ? '$reactionType selected • +$xpGained XP'
-                              : 'Reaction already submitted',
-                        ),
-                        duration: const Duration(seconds: 1),
-                      ),
+                    AppFeedback.show(
+                      context,
+                      message: xpGained > 0
+                          ? 'Nice! $reactionType selected • +$xpGained XP'
+                          : 'Reaction already submitted',
+                      icon: Icons.emoji_objects_outlined,
                     );
                   }
                 },

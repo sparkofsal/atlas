@@ -4,6 +4,8 @@ import '../models/play_style.dart';
 import '../services/app_state.dart';
 import '../services/daily_service.dart';
 import '../services/exploration_service.dart';
+import '../widgets/active_run_card.dart';
+import '../widgets/goals_section.dart';
 import '../widgets/play_style_selector.dart';
 import '../widgets/player_identity_header.dart';
 import 'belief_detail_screen.dart';
@@ -93,6 +95,20 @@ class ExploreScreen extends StatelessWidget {
             ),
           ),
 
+          const SizedBox(height: 16),
+
+          if (appState.activeRun != null) ...[
+            Text(
+              'Active Run 🔥',
+              style: Theme.of(context).textTheme.headlineSmall,
+            ),
+            const SizedBox(height: 8),
+            ActiveRunCard(run: appState.activeRun!),
+            const SizedBox(height: 16),
+          ],
+
+          GoalsSection(goals: appState.activeGoals),
+
           const SizedBox(height: 20),
 
           Text(
@@ -142,8 +158,8 @@ class ExploreScreen extends StatelessWidget {
                 padding: const EdgeInsets.all(18),
                 child: Text(
                   appState.activePlayStyle == PlayStyle.exploreSayings
-                      ? 'No sayings available yet. Reach Level 2 or unlock more countries.'
-                      : 'No content available for this path right now. Try another play style.',
+                      ? 'No sayings available yet. Reach Level 2 or unlock more depth.'
+                      : 'Nothing here right now. Try another path.',
                 ),
               ),
             )

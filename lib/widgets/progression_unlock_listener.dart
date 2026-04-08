@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../services/app_state.dart';
+import 'app_feedback.dart';
 
 class ProgressionUnlockListener extends StatefulWidget {
   const ProgressionUnlockListener({super.key});
@@ -23,11 +24,10 @@ class _ProgressionUnlockListenerState extends State<ProgressionUnlockListener> {
 
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(event.message),
-            duration: const Duration(seconds: 2),
-          ),
+        AppFeedback.show(
+          context,
+          message: event.message,
+          icon: Icons.auto_awesome,
         );
         appState.clearPendingProgressionUnlockEvent();
       });
