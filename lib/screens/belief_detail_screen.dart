@@ -2,8 +2,12 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../models/belief.dart';
 import '../services/app_state.dart';
+import '../services/continuation_service.dart';
 import '../services/interaction_service.dart';
 import '../widgets/app_feedback.dart';
+import '../widgets/continuation_card.dart';
+import 'country_detail_screen.dart';
+import 'explore_screen.dart';
 
 class BeliefDetailScreen extends StatelessWidget {
   final Belief belief;
@@ -46,12 +50,63 @@ class BeliefDetailScreen extends StatelessWidget {
     return null;
   }
 
+  void _handleContinuation(BuildContext context, AppState appState) {
+    final action = ContinuationService.buildNextAction(
+      activeRun: appState.activeRun,
+      progressList: appState.getCountryProgressList(),
+      currentCombo: appState.currentCombo,
+    );
+
+    switch (action.actionType) {
+      case 'country':
+      case 'run':
+        if (action.countryCode != null) {
+          Navigator.pushReplacement(
+            context,
+            MaterialPageRoute(
+              builder: (_) => CountryDetailScreen(
+                countryCode: action.countryCode!,
+              ),
+            ),
+          );
+          return;
+        }
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(
+            builder: (_) => const ExploreScreen(),
+          ),
+        );
+        return;
+
+      case 'combo':
+      case 'explore':
+      default:
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(
+            builder: (_) => const ExploreScreen(),
+          ),
+        );
+        return;
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final appState = Provider.of<AppState>(context);
     final isSaved = appState.isFavorite(belief.id);
     final interaction = appState.getInteraction(belief.id);
     final prompt = InteractionService.buildPrompt(belief);
+
+    final continuation = ContinuationService.buildNextAction(
+      activeRun: appState.activeRun,
+      progressList: appState.getCountryProgressList(),
+      currentCombo: appState.currentCombo,
+    );
+
+    final showContinuationCard =
+        interaction.hasGuessed && interaction.hasReacted;
 
     return Scaffold(
       appBar: AppBar(
@@ -119,7 +174,6 @@ class BeliefDetailScreen extends StatelessWidget {
                     ),
                   ],
                   const SizedBox(height: 20),
-
                   if (!interaction.hasGuessed) ...[
                     Text(
                       prompt.prompt,
@@ -223,8 +277,7 @@ class BeliefDetailScreen extends StatelessWidget {
                               fontWeight: FontWeight.w600,
                             ),
                       )
-                    else if (prompt.mode == 'true_fake' &&
-                        prompt.statementIsReal)
+                    else if (prompt.mode == 'true_fake' && prompt.statementIsReal)
                       Text(
                         'It was real. Here is the full entry:',
                         style: Theme.of(context).textTheme.bodyMedium?.copyWith(
@@ -250,7 +303,6 @@ class BeliefDetailScreen extends StatelessWidget {
               ),
             ),
           ),
-
           if (interaction.hasGuessed) ...[
             const SizedBox(height: 20),
             Text(
@@ -283,9 +335,14 @@ class BeliefDetailScreen extends StatelessWidget {
               locked: interaction.hasReacted,
             ),
           ],
-
+          if (showContinuationCard) ...[
+            const SizedBox(height: 20),
+            ContinuationCard(
+              action: continuation,
+              onContinue: () => _handleContinuation(context, appState),
+            ),
+          ],
           const SizedBox(height: 20),
-
           Row(
             children: [
               Expanded(
@@ -342,8 +399,7 @@ class BeliefDetailScreen extends StatelessWidget {
         width: double.infinity,
         child: OutlinedButton(
           style: OutlinedButton.styleFrom(
-            backgroundColor:
-                isSelected ? Colors.indigo.withOpacity(0.12) : null,
+            backgroundColor: isSelected ? Colors.indigo.withOpacity(0.12) : null,
           ),
           onPressed: locked
               ? null
