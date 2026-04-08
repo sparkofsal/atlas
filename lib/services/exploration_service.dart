@@ -3,7 +3,7 @@ import '../data/mock_countries.dart';
 import '../models/belief.dart';
 import '../models/play_style.dart';
 import 'collection_service.dart';
-import 'country_unlock_service.dart';
+import 'progression_service.dart';
 
 class SmartSuggestion {
   final String title;
@@ -22,20 +22,13 @@ class SmartSuggestion {
 }
 
 class ExplorationService {
-  static List<Belief> _unlockedItems({
+  static List<Belief> _availableItemsForLevel({
     required int playerLevel,
   }) {
-    return mockBeliefs.where((item) {
-      final countryUnlocked = CountryUnlockService.isUnlocked(
-        countryCode: item.countryCode,
-        playerLevel: playerLevel,
-      );
-
-      final sayingsUnlocked =
-          item.contentType != 'saying' || playerLevel >= 2;
-
-      return countryUnlocked && sayingsUnlocked;
-    }).toList();
+    return ProgressionService.filterItemsForLevel(
+      items: mockBeliefs,
+      playerLevel: playerLevel,
+    );
   }
 
   static String? bestCountryToFinish({
@@ -43,24 +36,26 @@ class ExplorationService {
     required int playerLevel,
     String? preferredCountryCode,
   }) {
-    final eligible = progressList.where((item) {
-      final unlocked = CountryUnlockService.isUnlocked(
-        countryCode: item.countryCode,
-        playerLevel: playerLevel,
-      );
+    final availableItems = _availableItemsForLevel(playerLevel: playerLevel);
+    final availableCountryCodes = availableItems
+        .map((item) => item.countryCode)
+        .toSet();
 
+    final eligible = progressList.where((item) {
       final remaining = item.totalCount - item.discoveredCount;
 
-      return unlocked &&
-          item.discoveredCount > 0 &&
+      return item.discoveredCount > 0 &&
           item.completionPercentage < 100 &&
-          remaining > 0;
+          remaining > 0 &&
+          availableCountryCodes.contains(item.countryCode);
     }).toList();
 
     if (eligible.isEmpty) return null;
 
     if (preferredCountryCode != null) {
-      final preferred = eligible.where((e) => e.countryCode == preferredCountryCode);
+      final preferred = eligible.where(
+        (e) => e.countryCode == preferredCountryCode,
+      );
       if (preferred.isNotEmpty) {
         return preferred.first.countryCode;
       }
@@ -97,18 +92,19 @@ class ExplorationService {
       );
     }
 
+    final availableItems = _availableItemsForLevel(playerLevel: playerLevel);
+    final availableCountryCodes = availableItems
+        .map((item) => item.countryCode)
+        .toSet();
+
     final nearCompletion = progressList.where((item) {
-      final unlocked = CountryUnlockService.isUnlocked(
-        countryCode: item.countryCode,
-        playerLevel: playerLevel,
-      );
       final remaining = item.totalCount - item.discoveredCount;
 
-      return unlocked &&
-          item.discoveredCount > 0 &&
+      return item.discoveredCount > 0 &&
           item.completionPercentage < 100 &&
           remaining > 0 &&
-          remaining <= 2;
+          remaining <= 2 &&
+          availableCountryCodes.contains(item.countryCode);
     }).toList();
 
     if (nearCompletion.isNotEmpty) {
@@ -150,7 +146,9 @@ class ExplorationService {
       );
 
       if (countryCode != null) {
-        final country = mockCountries.firstWhere((item) => item.code == countryCode);
+        final country = mockCountries.firstWhere(
+          (item) => item.code == countryCode,
+        );
         return SmartSuggestion(
           title: 'Continue ${country.name}',
           subtitle: 'You already started this path — keep going.',
@@ -177,7 +175,7 @@ class ExplorationService {
     required List<CountryCollectionProgress> progressList,
     String? selectedCountryCode,
   }) {
-    final items = _unlockedItems(playerLevel: playerLevel);
+    final items = _availableItemsForLevel(playerLevel: playerLevel);
 
     final progressByCountry = {
       for (final item in progressList) item.countryCode: item,
@@ -185,9 +183,7 @@ class ExplorationService {
 
     switch (playStyle) {
       case PlayStyle.findNewDiscoveries:
-        return items
-            .where((item) => !discoveredIds.contains(item.id))
-            .toList();
+        return items.where((item) => !discoveredIds.contains(item.id)).toList();
 
       case PlayStyle.finishCountry:
         final countryCode = bestCountryToFinish(
@@ -229,8 +225,12 @@ class ExplorationService {
             if (!discovered) total += 100;
             if (inProgressCountry) total += 20;
             if (item.contentType == 'saying') total += 8;
-            if (item.rarity == 'uncommon') total += 3;
-            if (item.rarity == 'rare') total += 6;
+
+            final rarity = ProgressionService.normalizeRarity(item.rarity);
+            if (playerLevel >= 3 && rarity == 'rare') total += 8;
+            if (playerLevel >= 6 && rarity == 'epic') total += 12;
+            if (playerLevel >= 10 && rarity == 'legendary') total += 18;
+
             return total;
           }
 

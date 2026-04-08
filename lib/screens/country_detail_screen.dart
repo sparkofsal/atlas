@@ -4,6 +4,7 @@ import '../data/mock_countries.dart';
 import '../data/mock_beliefs.dart';
 import '../models/belief.dart';
 import '../services/app_state.dart';
+import '../services/progression_service.dart';
 import 'belief_detail_screen.dart';
 
 class CountryDetailScreen extends StatelessWidget {
@@ -17,23 +18,34 @@ class CountryDetailScreen extends StatelessWidget {
   List<Belief> getCountryBeliefs(BuildContext context) {
     final appState = Provider.of<AppState>(context, listen: false);
 
-    return mockBeliefs.where((belief) {
-      final isSameCountry = belief.countryCode == countryCode;
+    final countryItems = mockBeliefs
+        .where((belief) => belief.countryCode == countryCode)
+        .toList();
 
-      final isUnlocked = belief.contentType == 'belief' ||
-          (belief.contentType == 'saying' && appState.level >= 2);
-
-      return isSameCountry && isUnlocked;
-    }).toList();
+    return ProgressionService.filterItemsForLevel(
+      items: countryItems,
+      playerLevel: appState.level,
+      countryCode: countryCode,
+    );
   }
 
   @override
   Widget build(BuildContext context) {
+    final appState = Provider.of<AppState>(context);
     final country = mockCountries.firstWhere((item) => item.code == countryCode);
     final beliefs = getCountryBeliefs(context);
-    final progress = Provider.of<AppState>(context).getCountryProgressList().firstWhere(
+    final progress = appState.getCountryProgressList().firstWhere(
           (item) => item.countryCode == countryCode,
         );
+
+    final totalCountryItems = mockBeliefs
+        .where((belief) => belief.countryCode == countryCode)
+        .length;
+
+    final visibleCount = beliefs.length;
+    final nextDepthLevel = ProgressionService.nextCountryDepthUnlockLevel(
+      appState.level,
+    );
 
     return Scaffold(
       appBar: AppBar(
@@ -87,6 +99,21 @@ class CountryDetailScreen extends StatelessWidget {
                     ),
                   ),
                 ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 12),
+          Card(
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Text(
+                visibleCount < totalCountryItems && nextDepthLevel != null
+                    ? 'More discoveries from ${country.name} unlock at Level $nextDepthLevel.'
+                    : 'You currently have access to the full visible pool for this country.',
+                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                      color: Colors.indigo,
+                      fontWeight: FontWeight.w600,
+                    ),
               ),
             ),
           ),

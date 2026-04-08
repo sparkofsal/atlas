@@ -13,9 +13,12 @@ class BeliefDetailScreen extends StatelessWidget {
   });
 
   Color getRarityColor() {
-    switch (belief.rarity) {
+    switch (belief.rarity.toLowerCase()) {
+      case 'legendary':
+        return Colors.amber;
+      case 'epic':
+        return Colors.deepPurple;
       case 'rare':
-        return Colors.purple;
       case 'uncommon':
         return Colors.blue;
       default:
@@ -116,6 +119,9 @@ class BeliefDetailScreen extends StatelessWidget {
                   ],
                   const SizedBox(height: 20),
 
+                  /// =========================
+                  /// GUESS PHASE
+                  /// =========================
                   if (!interaction.hasGuessed) ...[
                     Text(
                       prompt.prompt,
@@ -171,7 +177,12 @@ class BeliefDetailScreen extends StatelessWidget {
                         ),
                       ),
                     ),
-                  ] else ...[
+                  ]
+
+                  /// =========================
+                  /// RESULT PHASE
+                  /// =========================
+                  else ...[
                     Text(
                       'Answer revealed',
                       style: Theme.of(context).textTheme.titleLarge,
@@ -203,6 +214,7 @@ class BeliefDetailScreen extends StatelessWidget {
                       style: Theme.of(context).textTheme.titleMedium,
                     ),
                     const SizedBox(height: 16),
+
                     if (prompt.mode == 'true_fake' && !prompt.statementIsReal)
                       Text(
                         'That statement was made up. Here is the real entry from ${belief.countryName}:',
@@ -211,7 +223,8 @@ class BeliefDetailScreen extends StatelessWidget {
                               fontWeight: FontWeight.w600,
                             ),
                       )
-                    else if (prompt.mode == 'true_fake' && prompt.statementIsReal)
+                    else if (prompt.mode == 'true_fake' &&
+                        prompt.statementIsReal)
                       Text(
                         'It was real. Here is the full entry:',
                         style: Theme.of(context).textTheme.bodyMedium?.copyWith(
@@ -219,7 +232,10 @@ class BeliefDetailScreen extends StatelessWidget {
                               fontWeight: FontWeight.w600,
                             ),
                       ),
-                    if (prompt.mode == 'true_fake') const SizedBox(height: 12),
+
+                    if (prompt.mode == 'true_fake')
+                      const SizedBox(height: 12),
+
                     Text(
                       belief.description,
                       style: Theme.of(context).textTheme.bodyLarge,
@@ -238,6 +254,9 @@ class BeliefDetailScreen extends StatelessWidget {
             ),
           ),
 
+          /// =========================
+          /// REACTIONS
+          /// =========================
           if (interaction.hasGuessed) ...[
             const SizedBox(height: 20),
             Text(
@@ -273,6 +292,9 @@ class BeliefDetailScreen extends StatelessWidget {
 
           const SizedBox(height: 20),
 
+          /// =========================
+          /// ACTION BUTTONS
+          /// =========================
           Row(
             children: [
               Expanded(
@@ -330,7 +352,8 @@ class BeliefDetailScreen extends StatelessWidget {
         width: double.infinity,
         child: OutlinedButton(
           style: OutlinedButton.styleFrom(
-            backgroundColor: isSelected ? Colors.indigo.withOpacity(0.12) : null,
+            backgroundColor:
+                isSelected ? Colors.indigo.withOpacity(0.12) : null,
           ),
           onPressed: locked
               ? null

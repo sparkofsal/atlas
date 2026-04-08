@@ -14,6 +14,7 @@ import '../models/item_interaction.dart';
 import '../models/level_up_event.dart';
 import '../models/play_style.dart';
 import '../models/player_identity.dart';
+import '../models/progression_unlock_event.dart';
 import '../models/run_reward_event.dart';
 import '../models/session_goal.dart';
 import 'collection_migration_service.dart';
@@ -21,6 +22,7 @@ import 'collection_service.dart';
 import 'daily_service.dart';
 import 'goal_service.dart';
 import 'interaction_service.dart';
+import 'progression_service.dart';
 import 'run_service.dart';
 
 class AppState extends ChangeNotifier {
@@ -86,6 +88,7 @@ class AppState extends ChangeNotifier {
   LevelUpEvent? _pendingLevelUpEvent;
   GoalRewardEvent? _pendingGoalRewardEvent;
   RunRewardEvent? _pendingRunRewardEvent;
+  ProgressionUnlockEvent? _pendingProgressionUnlockEvent;
 
   AppState() {
     _dailyState = DailyState.initial(DailyService.todayKey());
@@ -113,6 +116,8 @@ class AppState extends ChangeNotifier {
   LevelUpEvent? get pendingLevelUpEvent => _pendingLevelUpEvent;
   GoalRewardEvent? get pendingGoalRewardEvent => _pendingGoalRewardEvent;
   RunRewardEvent? get pendingRunRewardEvent => _pendingRunRewardEvent;
+  ProgressionUnlockEvent? get pendingProgressionUnlockEvent =>
+      _pendingProgressionUnlockEvent;
 
   List<SessionGoal> get activeGoals => _activeGoals;
   DiscoveryRun? get activeRun => _activeRun;
@@ -140,7 +145,11 @@ class AppState extends ChangeNotifier {
 
   String? get nearCountryGoalHint {
     final progressList = getCountryProgressList()
-        .where((item) => item.discoveredCount > 0 && item.discoveredCount < item.totalCount)
+        .where(
+          (item) =>
+              item.discoveredCount > 0 &&
+              item.discoveredCount < item.totalCount,
+        )
         .toList();
 
     if (progressList.isEmpty) return null;
@@ -275,6 +284,11 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
+  void clearPendingProgressionUnlockEvent() {
+    _pendingProgressionUnlockEvent = null;
+    notifyListeners();
+  }
+
   void _setLevelUpEventIfNeeded(int oldLevel, int newLevel) {
     if (newLevel <= oldLevel) return;
 
@@ -287,6 +301,20 @@ class AppState extends ChangeNotifier {
       newLevel: newLevel,
       oldTitle: oldTitle,
       newTitle: newTitle,
+    );
+  }
+
+  void _setProgressionUnlockEventIfNeeded(int oldLevel, int newLevel) {
+    final message = ProgressionService.unlockMessageForLevelCrossed(
+      oldLevel: oldLevel,
+      newLevel: newLevel,
+    );
+
+    if (message == null) return;
+
+    _pendingProgressionUnlockEvent = ProgressionUnlockEvent(
+      id: DateTime.now().microsecondsSinceEpoch.toString(),
+      message: message,
     );
   }
 
@@ -452,12 +480,14 @@ class AppState extends ChangeNotifier {
 
       _pendingRunRewardEvent = RunRewardEvent(
         id: DateTime.now().microsecondsSinceEpoch.toString(),
-        message: 'Run complete: ${rewardedRun.title} • +${rewardedRun.rewardXp} XP',
+        message:
+            'Run complete: ${rewardedRun.title} • +${rewardedRun.rewardXp} XP',
       );
 
       await _saveRun();
       await _saveXp();
       _setLevelUpEventIfNeeded(oldLevel, level);
+      _setProgressionUnlockEventIfNeeded(oldLevel, level);
       return;
     }
 
@@ -706,6 +736,7 @@ class AppState extends ChangeNotifier {
     await _refreshRunProgress();
     await _saveXp();
     _setLevelUpEventIfNeeded(oldLevel, level);
+    _setProgressionUnlockEventIfNeeded(oldLevel, level);
     notifyListeners();
   }
 
@@ -725,6 +756,7 @@ class AppState extends ChangeNotifier {
     await _saveXp();
 
     _setLevelUpEventIfNeeded(oldLevel, level);
+    _setProgressionUnlockEventIfNeeded(oldLevel, level);
     notifyListeners();
     return true;
   }
@@ -773,7 +805,10 @@ class AppState extends ChangeNotifier {
       if (_currentCombo > _bestCombo) {
         _bestCombo = _currentCombo;
       }
-      comboBonusXp = InteractionService.comboBonus(_currentCombo);
+      comboBonusXp = ProgressionService.comboBonusForLevel(
+        combo: _currentCombo,
+        level: level,
+      );
     } else {
       comboBroken = _currentCombo > 0;
       _currentCombo = 0;
@@ -824,6 +859,7 @@ class AppState extends ChangeNotifier {
     }
 
     _setLevelUpEventIfNeeded(oldLevel, level);
+    _setProgressionUnlockEventIfNeeded(oldLevel, level);
     notifyListeners();
 
     return GuessResult(
@@ -866,6 +902,7 @@ class AppState extends ChangeNotifier {
     await _refreshRunProgress();
 
     _setLevelUpEventIfNeeded(oldLevel, level);
+    _setProgressionUnlockEventIfNeeded(oldLevel, level);
     notifyListeners();
 
     return 2;
@@ -894,6 +931,7 @@ class AppState extends ChangeNotifier {
     await _refreshRunProgress();
 
     _setLevelUpEventIfNeeded(oldLevel, level);
+    _setProgressionUnlockEventIfNeeded(oldLevel, level);
     notifyListeners();
     return true;
   }
@@ -921,6 +959,7 @@ class AppState extends ChangeNotifier {
     await _refreshRunProgress();
 
     _setLevelUpEventIfNeeded(oldLevel, level);
+    _setProgressionUnlockEventIfNeeded(oldLevel, level);
     notifyListeners();
     return true;
   }
