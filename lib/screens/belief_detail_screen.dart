@@ -9,6 +9,7 @@ import '../widgets/continuation_card.dart';
 import '../content/narrative_text.dart';
 import 'country_detail_screen.dart';
 import 'explore_screen.dart';
+import '../services/analytics_service.dart';
 
 class BeliefDetailScreen extends StatelessWidget {
   final Belief belief;
@@ -193,9 +194,17 @@ class BeliefDetailScreen extends StatelessWidget {
                           width: double.infinity,
                           child: ElevatedButton(
                             onPressed: () async {
+                              AnalyticsService().logGuessSubmitted();
+
                               final result =
                                   await appState.submitGuess(belief, option);
-
+                                  
+                              if (result.isCorrect) {
+                                AnalyticsService().logGuessCorrect(combo: result.comboAfter);
+                              } else {
+                                AnalyticsService().logGuessWrong();
+                              }                            
+                              
                               if (!context.mounted) return;
 
                               String message;

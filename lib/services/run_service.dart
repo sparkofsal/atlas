@@ -165,9 +165,7 @@ class RunService {
         final counted = List<String>.from(run.metadata['countedItemIds'] ?? []);
 
         String? activeCategory = categoryId;
-        if (activeCategory == null) {
-          activeCategory = belief.categoryId;
-        }
+        activeCategory ??= belief.categoryId;
 
         if (belief.categoryId != activeCategory) {
           return run.copyWith(

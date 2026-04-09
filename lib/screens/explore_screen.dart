@@ -12,6 +12,7 @@ import '../widgets/player_identity_header.dart';
 import '../content/narrative_text.dart';
 import 'belief_detail_screen.dart';
 import 'country_detail_screen.dart';
+import '../services/analytics_service.dart';
 
 class ExploreScreen extends StatefulWidget {
   const ExploreScreen({super.key});
@@ -21,6 +22,7 @@ class ExploreScreen extends StatefulWidget {
 }
 
 class _ExploreScreenState extends State<ExploreScreen> {
+  String? _lastLoggedSuggestionKey;
   @override
   void initState() {
     super.initState();
@@ -70,6 +72,18 @@ class _ExploreScreenState extends State<ExploreScreen> {
       progressList: progressList,
     );
 
+    final suggestionKey =
+    '${suggestion.playStyle.name}_${suggestion.countryCode ?? 'none'}_${suggestion.ctaLabel}';
+
+    if (_lastLoggedSuggestionKey != suggestionKey) {
+      _lastLoggedSuggestionKey = suggestionKey;
+
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        AnalyticsService().logSuggestionShown(suggestionKey);
+      });
+    }
+
     final feed = ExplorationService.buildFeed(
       playStyle: appState.activePlayStyle,
       playerLevel: appState.level,
@@ -114,6 +128,7 @@ class _ExploreScreenState extends State<ExploreScreen> {
                   const SizedBox(height: 12),
                   ElevatedButton(
                     onPressed: () async {
+                      AnalyticsService().logSuggestionClicked(suggestionKey);
                       await appState.setPlayStyle(
                         suggestion.playStyle,
                         countryCode: suggestion.countryCode,
@@ -241,6 +256,7 @@ class _ExploreScreenState extends State<ExploreScreen> {
                       ),
                       onTap: () async {
                         await appState.setSelectedCountryCode(item.countryCode);
+                        AnalyticsService().logBeliefViewed(item.id);
 
                         if (context.mounted) {
                           Navigator.push(
@@ -270,6 +286,8 @@ class _ExploreScreenState extends State<ExploreScreen> {
             label: 'Daily Belief',
             completed: appState.dailyBeliefCompleted,
             onTap: () {
+              AnalyticsService().logBeliefViewed(dailyBelief.id);
+
               Navigator.push(
                 context,
                 MaterialPageRoute(
@@ -284,6 +302,7 @@ class _ExploreScreenState extends State<ExploreScreen> {
             label: 'Daily Saying',
             completed: appState.dailySayingCompleted,
             onTap: () {
+              AnalyticsService().logBeliefViewed(dailySaying.id);
               Navigator.push(
                 context,
                 MaterialPageRoute(

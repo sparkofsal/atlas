@@ -1,9 +1,8 @@
 import 'dart:convert';
-
+import 'analytics_service.dart';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../data/mock_countries.dart';
-import '../data/mock_beliefs.dart';
 import '../models/belief.dart';
 import '../models/country_collection.dart';
 import '../models/daily_state.dart';
@@ -401,6 +400,9 @@ class AppState extends ChangeNotifier {
         recentRunTypes: _recentRunTypes,
         playerLevel: level,
       );
+
+      AnalyticsService().logRunStarted();
+
       await _saveRun();
     }
   }
@@ -475,6 +477,9 @@ class AppState extends ChangeNotifier {
       final oldLevel = level;
       final rewardedRun = updatedRun.copyWith(rewarded: true);
       _activeRun = rewardedRun;
+
+      AnalyticsService().logRunCompleted(length: rewardedRun.target);
+
       _xp += rewardedRun.rewardXp;
       _rememberRunType(rewardedRun.runType);
 
@@ -802,6 +807,9 @@ class AppState extends ChangeNotifier {
     if (isCorrect) {
       _currentCombo += 1;
       comboAfter = _currentCombo;
+
+      AnalyticsService().logComboExtended(_currentCombo);
+
       if (_currentCombo > _bestCombo) {
         _bestCombo = _currentCombo;
       }
@@ -811,6 +819,11 @@ class AppState extends ChangeNotifier {
       );
     } else {
       comboBroken = _currentCombo > 0;
+      
+      if (comboBroken) {
+        AnalyticsService().logComboBroken(_currentCombo);
+      }
+
       _currentCombo = 0;
       comboAfter = 0;
     }
