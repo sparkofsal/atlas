@@ -6,6 +6,7 @@ import '../services/continuation_service.dart';
 import '../services/interaction_service.dart';
 import '../widgets/app_feedback.dart';
 import '../widgets/continuation_card.dart';
+import '../content/narrative_text.dart';
 import 'country_detail_screen.dart';
 import 'explore_screen.dart';
 
@@ -201,14 +202,20 @@ class BeliefDetailScreen extends StatelessWidget {
                               IconData icon;
 
                               if (result.isCorrect) {
-                                message = result.comboAfter >= 2
-                                    ? 'Nice! Correct • +${result.totalXp} XP • Combo x${result.comboAfter}'
-                                    : 'Nice! Correct • +${result.totalXp} XP';
+                                message = NarrativeText.pick(
+                                  NarrativeText.correctMessages,
+                                );
+
+                                if (result.comboAfter >= 2) {
+                                  message +=
+                                      " • ${NarrativeText.pick(NarrativeText.comboMessages)}";
+                                }
+
                                 icon = Icons.check_circle_outline;
                               } else {
-                                message = result.comboBroken
-                                    ? 'Unexpected 👀 Wrong guess • +${result.totalXp} XP • Combo broken'
-                                    : 'Not quite • +${result.totalXp} XP';
+                                message = NarrativeText.pick(
+                                  NarrativeText.incorrectMessages,
+                                );
                                 icon = Icons.help_outline;
                               }
 

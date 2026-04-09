@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../models/play_style.dart';
 import '../services/app_state.dart';
 import '../services/daily_service.dart';
@@ -8,11 +9,52 @@ import '../widgets/active_run_card.dart';
 import '../widgets/goals_section.dart';
 import '../widgets/play_style_selector.dart';
 import '../widgets/player_identity_header.dart';
+import '../content/narrative_text.dart';
 import 'belief_detail_screen.dart';
 import 'country_detail_screen.dart';
 
-class ExploreScreen extends StatelessWidget {
+class ExploreScreen extends StatefulWidget {
   const ExploreScreen({super.key});
+
+  @override
+  State<ExploreScreen> createState() => _ExploreScreenState();
+}
+
+class _ExploreScreenState extends State<ExploreScreen> {
+  @override
+  void initState() {
+    super.initState();
+    _checkFirstLaunch();
+  }
+
+  Future<void> _checkFirstLaunch() async {
+    final prefs = await SharedPreferences.getInstance();
+    final hasSeen = prefs.getBool('has_seen_onboarding') ?? false;
+
+    if (!hasSeen) {
+      await prefs.setBool('has_seen_onboarding', true);
+
+      if (!mounted) return;
+
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        showDialog(
+          context: context,
+          builder: (_) => AlertDialog(
+            content: Text(
+              NarrativeText.onboardingMessage,
+              style: const TextStyle(height: 1.4),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('Continue'),
+              ),
+            ],
+          ),
+        );
+      });
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
